@@ -10,7 +10,10 @@ type RefImage = {
 };
 
 const SEGMIND_BASE = 'https://api.segmind.com/v1';
-const NANO_BANANA_2_ENDPOINT = `${SEGMIND_BASE}/nano-banana-2`;
+const SEGMIND_IMAGE_ENDPOINTS: Record<string, string> = {
+  'nano-banana-2': `${SEGMIND_BASE}/nano-banana-2`,
+  'gpt-image-2': `${SEGMIND_BASE}/gpt-image-2`,
+};
 const MAX_REFS = 14;
 
 const getApiKey = () => {
@@ -29,6 +32,13 @@ const outputResolution = (): '1K' | '2K' | '4K' => {
   // Nano Banana 2 advertises 512px, but 16:9/1:1 512px requests fall below
   // the current pixel minimum and are rejected by the upstream model.
   return ['1K', '2K', '4K'].includes(value) ? value as any : '1K';
+};
+
+const gptImageSize = (aspectRatio = '16:9'): string => {
+  const normalized = normalizeAspectRatio(aspectRatio);
+  if (normalized === '1:1') return '1024x1024';
+  if (normalized === '9:16' || normalized === '3:4' || normalized === '4:5' || normalized === '2:3') return '1024x1536';
+  return '1536x1024';
 };
 
 const styleReferenceGuard = (refs: RefImage[]): string => {
@@ -114,37 +124,52 @@ export const generateNanoBanana2 = async (
   prompt: string,
   aspectRatio = '16:9',
   refs: RefImage[] = [],
+  model = 'nano-banana-2',
 ): Promise<string> => {
+  const runtimeModel = SEGMIND_IMAGE_ENDPOINTS[model] ? model : 'nano-banana-2';
   const cappedRefs = refs.slice(0, MAX_REFS);
   const imageUrls = await Promise.all(cappedRefs.map(refToUrl));
   const guardedPrompt = `${styleReferenceGuard(cappedRefs)}${prompt}`;
 
-  console.log(`[segmind-image] nano-banana-2 refs=${imageUrls.length}, aspect=${aspectRatio}, resolution=${outputResolution()}, prompt=${guardedPrompt.slice(0, 90)}...`);
+  console.log(`[segmind-image] ${runtimeModel} refs=${imageUrls.length}, aspect=${aspectRatio}, resolution=${outputResolution()}, prompt=${guardedPrompt.slice(0, 90)}...`);
 
-  const res = await fetch(NANO_BANANA_2_ENDPOINT, {
+  const body = runtimeModel === 'gpt-image-2'
+    ? {
+        prompt: guardedPrompt,
+        image_urls: imageUrls,
+        size: gptImageSize(aspectRatio),
+        quality: process.env.SEGMIND_GPT_IMAGE_QUALITY || 'high',
+        moderation: 'auto',
+        background: 'opaque',
+        output_compression: 100,
+        output_format: 'png',
+      }
+    : {
+        prompt: guardedPrompt,
+        image_urls: imageUrls,
+        web_search: false,
+        aspect_ratio: normalizeAspectRatio(aspectRatio),
+        output_format: 'png',
+        thinking_level: 'minimal',
+        safety_tolerance: 4,
+        output_resolution: outputResolution(),
+        response_modalities: 'TEXT_AND_IMAGE',
+        seed: Math.floor(Math.random() * 1000000),
+      };
+
+  const res = await fetch(SEGMIND_IMAGE_ENDPOINTS[runtimeModel], {
     method: 'POST',
     headers: {
       'x-api-key': getApiKey(),
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      prompt: guardedPrompt,
-      image_urls: imageUrls,
-      web_search: false,
-      aspect_ratio: normalizeAspectRatio(aspectRatio),
-      output_format: 'png',
-      thinking_level: 'minimal',
-      safety_tolerance: 4,
-      output_resolution: outputResolution(),
-      response_modalities: 'TEXT_AND_IMAGE',
-      seed: Math.floor(Math.random() * 1000000),
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    console.error(`[segmind-image] ${res.status} ${res.statusText}: ${errText.slice(0, 500)}`);
-    throw new Error(`Nano Banana 2 failed (${res.status}). ${errText.slice(0, 180)}`);
+    console.error(`[segmind-image] ${runtimeModel} ${res.status} ${res.statusText}: ${errText.slice(0, 500)}`);
+    throw new Error(`${runtimeModel} failed (${res.status}). ${errText.slice(0, 180)}`);
   }
 
   const contentType = res.headers.get('content-type') || '';
@@ -155,10 +180,10 @@ export const generateNanoBanana2 = async (
 
   const json = await res.json().catch(async () => {
     const text = await res.text().catch(() => '');
-    throw new Error(`Nano Banana 2 returned an unreadable response: ${text.slice(0, 180)}`);
+    throw new Error(`${runtimeModel} returned an unreadable response: ${text.slice(0, 180)}`);
   });
   const image = findImageString(json);
-  if (!image) throw new Error(`Nano Banana 2 returned no image result: ${JSON.stringify(json).slice(0, 300)}`);
+  if (!image) throw new Error(`${runtimeModel} returned no image result: ${JSON.stringify(json).slice(0, 300)}`);
   return saveImageString(image);
 };
 

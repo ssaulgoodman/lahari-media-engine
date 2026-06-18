@@ -617,9 +617,9 @@ Match the IDs exactly.`,
       { name: 'artistNote', description: 'Optional rewrite/refine instruction' },
       { name: 'artistReferenceImage', description: 'Optional visual reference attached during refine' },
     ],
-    template: `You are an art director planning one panel of a devotional music video storyboard. The locked style reference image is attached as vision input — read it to understand the medium (cinematic photographic, painterly, miniature, illustrated, mixed-media, etc.) and match it. Convert the source brief below into two saved artifacts:
+    template: `You are an art director planning one panel of a devotional music video storyboard. The locked style reference image is attached as vision input — read it for motifs, taste, identity, and environment cues, but the storyboard image itself should be a neutral black-and-white charcoal/pencil planning board. The final video step will use the locked refs for production style. Convert the source brief below into two saved artifacts:
 
-1. storyboardPrompt: ONE short image-render prompt (~330 words max). MUST include the panel layout + per-panel action descriptions inline + an explicit inter-panel consistency demand: style/lighting/palette from the style ref, character identity (face/costume/jewelry) from cast refs, environment geometry from the env ref — all stay CONSISTENT across every panel. Without this line panels drift apart and look like different scenes. Keep it lean: no "contract" bullet lists, no animation rules, no quality boilerplate, no "cinematic film still" language — cinema language fights non-realistic locked styles.
+1. storyboardPrompt: ONE short image-render prompt (~330 words max). MUST include the panel layout + per-panel action descriptions inline + an explicit inter-panel consistency demand: monochrome charcoal/pencil sketch medium across every panel, character identity (face/costume/jewelry) from cast refs, environment geometry from the env ref — all stay CONSISTENT across every panel. Without this line panels drift apart and look like different scenes. Keep it lean: no "contract" bullet lists, no animation rules, no quality boilerplate, no "cinematic film still" language.
 2. cutPlanText: one short action line per panel. Format: "Panel N — <action>". No timestamps, no separate camera/action/motion-cue fields. Drives the downstream Seedance video prompt only.
 
 Source brief (trimmed ~750 chars):
@@ -628,7 +628,7 @@ Concept: {{concept}}. Mood: {{mood}}. Pacing: {{musicalCue}}.
 Shot: {{clipDirection}}
 Cast: {{castNames || "none"}}
 Setting: {{environmentName || "unspecified"}}
-Read left-to-right, top-to-bottom. No visible panel numbers, captions, borders, or readable text inside panels. Keep style/identity from the reference images. Each panel = a different frame from the same clip with visible action and clear camera angle.
+Read left-to-right, top-to-bottom. No visible panel numbers, captions, borders, or readable text inside panels. Render as black-and-white charcoal/pencil storyboard art with textured graphite shading and no color. Preserve identity/place from the reference images. Each panel = a different frame from the same clip with visible action and clear camera angle.
 
 {{prevStoryboardImage ? "Continuity: the prev shot's locked storyboard is attached as vision input — match its color/light treatment and screen direction." : ""}}
 {{prevCutPlanText ? "Prev shot cut plan (text context):\\n" + prevCutPlanText : ""}}
@@ -648,7 +648,7 @@ Panel 2 ...`,
     model: 'nano-banana-2',
     modelLabel: 'Storyboard image provider (project storyboard_provider)',
     triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists. Bulk button regenerates already-rendered (unlocked) boards too — only locked shots are skipped.",
-    summary: 'Image-only render step. Sends the saved storyboardPrompt to Segmind Nano Banana 2 with locked style/cast/environment refs. Cut plan is NOT sent — it is for the downstream Seedance video step only. Legacy stored provider keys normalize to nano-banana-2.',
+    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard image provider with locked style/cast/environment refs. The current global prompt shape asks for a monochrome charcoal/pencil planning board, while the downstream Seedance video prompt tells the model not to copy that sketch medium. Cut plan is NOT sent — it is for the downstream Seedance video step only.',
     variables: [
       { name: 'storyboardPrompt', description: 'Saved image-render prompt on the shot. Only field required for image gen.' },
       { name: 'storyboardProvider', description: 'Project storyboard provider, normalized to nano-banana-2' },
@@ -907,13 +907,15 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
 
 Animate the storyboard @image1 into one {{clipDuration}}s clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
 
+Reference priority: @image1 is only the storyboard guide for composition, camera, blocking, and beat order. Do not copy @image1's visual medium or finish. The final video must use the locked style/character/environment references for style, color, lighting, texture, identity, costume, materials, and place. If @image1 is monochrome, sketch, charcoal, comic, or paper panels, translate its beats into the locked full-production style rather than rendering a sketch/comic/panel-sheet video.
+
 Shot: {{clipDirection}}
 
-{{refBindings ? "Identity refs (do not redesign):\\n" + refBindings : ""}}
+{{refBindings ? "Locked refs (do not redesign):\\n" + refBindings : ""}}
 {{cutPlanText ? "\\nPanel beats:\\n" + cutPlanText : ""}}
 {{lipsyncEnabled ? "\\nLip-sync: audio 1 is the song segment — use it only as visual timing reference for mouth movement on clearly-visible singing faces. Do not generate or preserve audio. Faces turned away or instrumental moments: keep mouth natural." : ""}}
 
-Preserve character identity (face, body, costume, jewelry) and environment geometry across the whole animation — match the locked references throughout, do not let them drift between panels.
+Preserve character identity (face, body, costume, jewelry), environment geometry, and the locked style reference across the whole animation — match the locked references throughout, do not let them drift between panels.
 
 Do not render text, panel borders, numbers, gutters, or split-screen artifacts from the board into the video.`,
     source: { file: 'server/services/seedance-storyboard-rd.ts', lines: 'buildSeedanceStoryboardVideoPrompt (board_plus_timing variant)' },

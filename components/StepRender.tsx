@@ -10,6 +10,7 @@ import {
   getRenderStatus,
   listRenders,
   deleteRender,
+  downloadPremiereExport,
   type RenderHistoryItem,
   type RenderStatusResponse,
 } from '../services/api';
@@ -107,6 +108,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack, timelineRefreshTo
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false);
   const [mediaNoticeDismissedFor, setMediaNoticeDismissedFor] = useState('');
+  const [exportingPremiere, setExportingPremiere] = useState(false);
   const [history, setHistory] = useState<RenderHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const timelineItems = useStore((s) => s.trackItemsMap);
@@ -365,6 +367,26 @@ export const StepRender: React.FC<Props> = ({ project, onBack, timelineRefreshTo
     }
   };
 
+  const handlePremiereExport = async () => {
+    if (exportingPremiere) return;
+    setExportingPremiere(true);
+    try {
+      const { blob, filename } = await downloadPremiereExport(project.id);
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 10_000);
+    } catch (err: any) {
+      alert(err?.message || 'Premiere export failed');
+    } finally {
+      setExportingPremiere(false);
+    }
+  };
+
   const isBusy = phase.kind === 'rendering';
   const progress = (renderMeta?.status === 'rendering' || renderMeta?.status === 'pending_finalize') && renderMeta.progress !== null
     ? Math.max(0, Math.min(1, renderMeta.progress))
@@ -420,6 +442,14 @@ export const StepRender: React.FC<Props> = ({ project, onBack, timelineRefreshTo
             title="Past renders"
           >
             History{history.length > 0 ? ` (${history.length})` : ''}
+          </button>
+          <button
+            onClick={handlePremiereExport}
+            disabled={isBusy || exportingPremiere}
+            className="text-[11px] px-2 py-1 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Download media, timeline JSON, and experimental FCPXML for Premiere Pro"
+          >
+            {exportingPremiere ? 'Packaging…' : 'Premiere'}
           </button>
           <button
             onClick={handleRender}

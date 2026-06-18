@@ -14,6 +14,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getSB, insertRow, selectAll, selectOne, updateRows } from '../database.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
+import { buildPremiereExportPackage } from '../services/premiereExport.js';
 
 const router = Router();
 
@@ -235,6 +236,33 @@ router.delete('/:id/timeline', async (req, res) => {
     .eq('project_id', projectId);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
+});
+
+router.get('/:id/export/premiere', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  try {
+    const pkg = await buildPremiereExportPackage(projectId);
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'premiere_export_downloaded',
+      entityType: 'project',
+      entityId: projectId,
+      summary: 'Artist downloaded a Premiere handoff package.',
+      payload: {
+        timelineVersion: pkg.manifest.timelineVersion,
+        itemCount: pkg.manifest.items.length,
+        source: pkg.manifest.source,
+      },
+    });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${pkg.fileName.replace(/"/g, '')}"`);
+    res.send(pkg.buffer);
+  } catch (err: any) {
+    console.error('[premiere-export]', err);
+    res.status(500).json({ error: err?.message || 'Premiere export failed' });
+  }
 });
 
 router.post('/:id/render', async (req, res) => {

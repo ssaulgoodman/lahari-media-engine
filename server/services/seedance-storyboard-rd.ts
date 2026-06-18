@@ -172,7 +172,7 @@ export const buildStoryboardPrompt = (
       ? `Setting: ${input.environmentName}`
       : '';
 
-    return `${layout.count}-panel storyboard for one ${input.clipDuration}s shot of a Lahari devotional music video.
+    return `${layout.count}-panel black-and-white charcoal/pencil storyboard for one ${input.clipDuration}s shot of a Lahari devotional music video.
 
 Layout: ${layout.rows}×${layout.cols} grid, panels read left-to-right then top-to-bottom. Identical 16:9 panels, thin white borders, white background.
 
@@ -180,7 +180,7 @@ Shot: ${input.clipDirection}
 ${charactersLine}
 ${settingLine}
 
-Each panel is a different moment from this same ${input.clipDuration}s shot — different framings, angles, beats — telling one visual arc. Match the reference images for style, character identity, costume, and environment.
+Each panel is a different moment from this same ${input.clipDuration}s shot — different framings, angles, beats — telling one visual arc. Use a clean monochrome charcoal sketch / pencil storyboard finish: textured graphite shading, visible hand-drawn linework, no color. Preserve character identity, costume, environment geometry, and sacred objects from the references, but translate them into the neutral sketch storyboard medium.
 
 No text, captions, arrows, panel numbers, or readable marks inside any panel. The board itself is what we use; descriptions live outside the image.`;
   }
@@ -200,7 +200,7 @@ No text, captions, arrows, panel numbers, or readable marks inside any panel. Th
 ${clipContext(input)}
 
 Use the provided reference images as ground truth:
-- the locked style reference controls visual language
+- the locked style reference controls composition taste and visual motifs, but the board itself must be monochrome charcoal/pencil sketch
 - character references control identity, body, costume, and jewelry
 - the environment reference controls geography and physical space
 
@@ -218,6 +218,7 @@ Storyboard contract:
 - Keep a stable spatial map across panels while allowing meaningful angle changes.
 - Every cut should reveal new information, deepen emotion, or land a musical beat.
 - Use only objects and gestures that belong to the shot, the references, and the devotional context.
+- Render the storyboard as a neutral black-and-white charcoal/pencil planning board: graphite texture, hand-drawn shading, no color. The final video model will use the locked refs for production style later.
 - Small clean panel numbers in a panel corner are allowed. Do NOT print captions, arrows, subtitles, speech bubbles, logos, watermarks, or dense readable text inside the storyboard image.
 - same characters, costumes, environment, and style across all panels
 - every panel must be a plausible frame from the same ${input.clipDuration}s clip
@@ -265,7 +266,7 @@ export const buildSeedanceStoryboardVideoPrompt = (
 
   if (variant === 'follow_board_only') {
     return `Here is the ordered storyboard for a ${input.clipDuration}s Lahari music-video clip: @image1.
-Follow the panels left-to-right across each row, then continue to the next row if present. If @image1 contains panel numbers, labels, borders, gutters, or guide marks, treat them only as sequencing guides and do not render them into the video. Use all other reference images only to preserve style, character identity, costume, and environment. No generated audio, no subtitles, no readable text.`;
+Follow the panels left-to-right across each row, then continue to the next row if present. Use @image1 for composition, camera, blocking, and beat order only. The final video style, color, lighting, texture, and finish must come from the locked style/character/environment references, not from the storyboard sheet. If @image1 is monochrome, sketch, charcoal, comic, or paper panels, translate it into the locked full-production style instead of copying that medium. If @image1 contains panel numbers, labels, borders, gutters, or guide marks, treat them only as sequencing guides and do not render them into the video. Use all other reference images to preserve style, character identity, costume, and environment. No generated audio, no subtitles, no readable text.`;
   }
 
   if (variant === 'shot_timing_only') {
@@ -280,8 +281,17 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
 
   const refs = opts?.refs || [];
   const refBindings = refs.length
-    ? refs.map((ref, idx) => `- @image${idx + 2} = ${ref.label} — identity anchor only`).join('\n')
-    : '- @image2..N = locked style, character, and environment refs — identity anchors only';
+    ? refs.map((ref, idx) => {
+        const slot = `@image${idx + 2}`;
+        if (/style/i.test(ref.label)) {
+          return `- ${slot} = ${ref.label} — final style, palette, lighting, texture, and finish anchor`;
+        }
+        if (/environment/i.test(ref.label)) {
+          return `- ${slot} = ${ref.label} — environment geometry, materials, and place identity anchor`;
+        }
+        return `- ${slot} = ${ref.label} — character/object identity anchor`;
+      }).join('\n')
+    : '- @image2..N = locked style, character, and environment refs — final style/identity/place anchors';
   const cutPlan = opts?.cutPlanText?.trim() || seedanceShotList(input, minimal);
   const lipsyncInstruction = opts?.lipsyncEnabled
     ? `\nLip-sync: audio 1 is the song segment — use it only as visual timing reference for mouth movement on clearly-visible singing faces. Do not generate or preserve audio. Faces turned away or instrumental moments: keep mouth natural.`
@@ -295,12 +305,14 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
   // video format. Was ~80 lines; now ~10.
   return `Animate the storyboard @image1 into one ${input.clipDuration}s clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
 
+Reference priority: @image1 is only the storyboard guide for composition, camera, blocking, and beat order. Do not copy @image1's visual medium or finish. The final video must use the locked style/character/environment references for style, color, lighting, texture, identity, costume, materials, and place. If @image1 is monochrome, sketch, charcoal, comic, or paper panels, translate its beats into the locked full-production style rather than rendering a sketch/comic/panel-sheet video.
+
 Shot: ${input.clipDirection}
 
-${refBindings ? `Identity refs (do not redesign):\n${refBindings}` : ''}
+${refBindings ? `Locked refs (do not redesign):\n${refBindings}` : ''}
 ${cutPlan ? `\nPanel beats:\n${cutPlan}` : ''}${lipsyncInstruction}
 
-Preserve character identity (face, body, costume, jewelry) and environment geometry across the whole animation — match the locked references throughout, do not let them drift between panels.
+Preserve character identity (face, body, costume, jewelry), environment geometry, and the locked style reference across the whole animation — match the locked references throughout, do not let them drift between panels.
 
 Do not render text, panel borders, numbers, gutters, or split-screen artifacts from the board into the video.`;
 };

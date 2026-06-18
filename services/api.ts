@@ -1087,3 +1087,19 @@ export const deleteRender = async (
   });
   return handleResponse(res);
 };
+
+export const downloadPremiereExport = async (
+  projectId: string,
+): Promise<{ blob: Blob; filename: string }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/export/premiere`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error?.message || body.error || `Request failed: ${res.status}`);
+  }
+  const disposition = res.headers.get('content-disposition') || '';
+  const match = disposition.match(/filename="([^"]+)"/i);
+  return {
+    blob: await res.blob(),
+    filename: match?.[1] || 'lahari-premiere-export.zip',
+  };
+};

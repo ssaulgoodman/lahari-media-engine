@@ -1,4 +1,4 @@
-export type StoryboardProviderKey = 'nano-banana-2';
+export type StoryboardProviderKey = 'gpt-image-2' | 'nano-banana-2';
 
 export interface StoryboardProviderSpec {
   key: StoryboardProviderKey;
@@ -21,11 +21,17 @@ export const STORYBOARD_PROVIDERS: StoryboardProviderSpec[] = [
     runtimeModel: 'nano-banana-2',
     note: 'Segmind Nano Banana 2. Default storyboard image renderer.',
   },
+  {
+    key: 'gpt-image-2',
+    label: 'GPT Image 2',
+    provider: 'segmind',
+    runtimeModel: 'gpt-image-2',
+    note: 'Segmind GPT Image 2. Higher-detail image editing/rendering for storyboard variants.',
+  },
 ];
 
 const LEGACY_STORYBOARD_PROVIDER_ALIASES: Record<string, StoryboardProviderKey> = {
   'nano-banana-pro': 'nano-banana-2',
-  'gpt-image-2': 'nano-banana-2',
 };
 
 export const getStoryboardProvider = (key: string | undefined | null): StoryboardProviderSpec =>

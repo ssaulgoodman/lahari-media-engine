@@ -477,7 +477,7 @@ const renderWithProvider = async (
 ): Promise<{ storagePath: string; model: string; provider: string; costEstimate: number; size?: string }> => {
   const provider = getStoryboardProvider(providerKey);
 
-  const imagePath = await generateNanoBanana2(prompt, aspectRatio, refs);
+  const imagePath = await generateNanoBanana2(prompt, aspectRatio, refs, provider.runtimeModel);
   return {
     storagePath: imagePath,
     model: provider.runtimeModel,
