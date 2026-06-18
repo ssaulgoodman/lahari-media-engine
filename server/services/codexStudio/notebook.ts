@@ -36,7 +36,7 @@ const LAHARI_SKILL_NAMES = [
   'style-ref-critic',
   'render-triage',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-24.visual-parity-v1';
+const NOTEBOOK_VERSION = '2026-06-18.sketch-storyboard-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -56,6 +56,8 @@ If the MCP server returns a newer notebookVersion than the one shown here or in 
 Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
 
 Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
+
+Current storyboard strategy: storyboard boards are neutral planning artifacts by default. Write storyboard image prompts as black-and-white charcoal/pencil boards with graphite texture, hand-drawn linework, and no color. Preserve identity, costume, environment geometry, sacred objects, and composition taste from refs, but do not make the board match final production style. Seedance video uses the board only for composition, camera, blocking, panel order, and beats; final style/color/lighting/texture/identity/place come from the locked style, cast, and environment refs.
 
 For extra inserts/B-roll, do not rewrite existing scenes just to make room. Read mirrors and drafts, propose a short contextual beat using existing cast/environment IDs by default, then call add_extra_shot. It appends under Extra Shots for the normal storyboard/video workflow; resulting videos belong in the Render media library for manual timeline placement. To remove an unwanted insert, call delete_extra_shot; never use apply_script/apply_script_markdown just to delete an extra shot.
 

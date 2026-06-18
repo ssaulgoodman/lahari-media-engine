@@ -31,7 +31,9 @@ You are writing a prompt that an image model will turn into a multi-panel storyb
 
 **Specific subjects, not generic types.** "Shantamma, elderly Tamil grandmother, gray hair tied back, wearing a faded cotton sari" — the model uses identity refs anyway, but the textual grounding helps. "An old woman" is too generic.
 
-**Medium language anchored to the locked style.** If the project's style is a painterly miniature, the storyboard should read as panels of that miniature — not as cinematic frames with painterly tint. The planner now sees the locked style ref directly (since 2026-05-12 fix), so describe the medium consistent with what the artist locked.
+**Storyboard medium is neutral by default.** For current Lahari storyboard-mode work, write the board as a black-and-white charcoal/pencil planning artifact: graphite texture, hand-drawn linework, no color. Preserve character identity, costume, environment geometry, sacred objects, and composition taste from the locked refs, but do not ask the storyboard image to match the final production style. The downstream Seedance video prompt uses the board only for composition/camera/blocking/beat order and uses locked style/cast/environment refs for final color, lighting, texture, identity, place, and finish.
+
+**Do not leak sketch style into video intent.** If you are editing the cut plan or video-facing notes, say explicitly that the board is a beat/composition guide only. The final video should not become charcoal, monochrome, comic, paper panels, split-screen, or a storyboard sheet unless the artist explicitly asks for that final look.
 
 **Tight length.** Storyboard prompts over ~3-4k characters degrade. The image model loses the through-line. If the prompt grows past that, you're describing too much detail per panel — compress.
 
@@ -99,4 +101,4 @@ When R28's `apply_video_prompt` ships, this is the rubric Codex follows. There i
 - Doctrine §4 (harness-native text generation): why this skill exists rather than backend AI calls
 - `script-doctor`: when refining a storyboard requires rethinking the shot's beat
 - `continuity-auditor`: when storyboard composition has to honor prev_shot continuity
-- `style-ref-critic`: when storyboard medium needs to match locked style
+- `style-ref-critic`: when the locked style ref is weak, too composition-specific, or not giving enough final-video style guidance

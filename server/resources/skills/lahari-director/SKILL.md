@@ -88,6 +88,8 @@ For character and environment looks, use the project cast/environment IDs from t
 
 For storyboard-mode projects, prefer scene drafts: edit `lahari/projects/<projectId>/drafts/storyboards/<scene>.md` so you can write adjacent shots as one continuous visual sequence, then persist with `apply_storyboard_scene_markdown`. Use `apply_storyboard_prompt` for one-shot surgical fixes and `apply_storyboard_prompts_bulk` only for automation/import payloads, not as the normal artist-facing writing ritual.
 
+Default storyboard strategy: boards are black-and-white charcoal/pencil planning artifacts, not final style refs. They guide composition/camera/blocking/beat order; Seedance final style comes from locked style/cast/environment refs. See `storyboard-prompt-craft`.
+
 Use `apply_shot_workflow_modes` when a specific shot should be forced to `storyboard` or `keyframe`; leave it `auto` when project/model defaults are fine. Use `modelOverride` on generation tools for one-off experiments instead of changing project preferences unless the new model should become the project default.
 
 When the artist asks for extra shots, inserts, montage pieces, or B-roll, do not rewrite the canonical script just to make room. Read the current concept/script/style, reuse existing cast/environment IDs by default, propose a short contextual beat, then call `add_extra_shot` after approval. The tool appends the shot under `Extra Shots`; it should move through the normal storyboard/video workflow and land in the Render media library for manual timeline placement. Do not generate a random standalone clip or attach every reference by default. When removing an unwanted insert, call `delete_extra_shot`; never use `apply_script` or `apply_script_markdown` just to delete an extra shot.
