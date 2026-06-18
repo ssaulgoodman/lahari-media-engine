@@ -40,6 +40,8 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
 - Studio interaction polish is now part of the product loop: expanded prompt panels must not
   create huge blank scroll regions, and Lock/Generate buttons need immediate, elegant feedback
   instead of delayed/janky state changes.
+- Top-bar agent/action indicators should feel refined: no crude flashing green/orange debug
+  lights. Use calm spinners, progress pills, subtle motion, and clear status language.
 - Render/editor is not the final creative surface. Mirage should hand shots, audio, captions,
   and metadata cleanly into a professional finishing path, ideally a Premiere Pro extension or
   export bridge, without losing Mirage shot identity.
@@ -115,6 +117,8 @@ Problems observed:
   textarea/body, forcing the user to scroll through empty space before reaching the end.
 - Core action buttons such as Lock and Generate can feel janky: feedback is delayed, spinner
   state is not always elegant, and button/state changes can lag the action the artist just took.
+- Top-bar agent action indicators are too basic today: flashing green/orange state changes feel
+  like debug telemetry instead of a polished creative tool.
 
 Work:
 
@@ -124,9 +128,13 @@ Work:
   against canonical server success/error
 - standardize disabled/loading/success/error button states across Studio shot cards and panels
 - avoid layout jump when buttons change labels or spinner state
+- replace flashing top-bar action notifications with refined activity indicators: quiet progress
+  pills, soft spinners, smooth enter/exit transitions, and status copy that distinguishes
+  running, succeeded, failed, and needs-attention states without loud color flashes
 
-**Done when:** expanding a prompt section never creates phantom blank space, and every Lock /
-Generate click gives instant, calm feedback without shifting neighboring controls.
+**Done when:** expanding a prompt section never creates phantom blank space, every Lock /
+Generate click gives instant, calm feedback without shifting neighboring controls, and active
+agent operations read as polished production status rather than blinking debug lights.
 
 ### P2 — Durable Override Parity `[ready now]`
 
@@ -422,3 +430,5 @@ repeatable human/agent product surface.
 - 2026-06-18 · Studio live-refresh backlog captured · — · Added automatic realtime refresh for
   agent/MCP-triggered generations so Studio reflects completed boards/videos without browser
   refresh or agent polling loops.
+- 2026-06-18 · top-bar activity polish captured · — · Added refined agent/action indicators to
+  Studio polish: calm spinners/progress pills, soft transitions, and no flashing debug colors.
