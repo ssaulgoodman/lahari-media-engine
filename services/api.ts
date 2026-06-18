@@ -686,6 +686,119 @@ export type PromptDescription = {
   note?: string;
 };
 
+export type ShotContextPayloadSegment = {
+  slot?: string | null;
+  label?: string;
+  included?: boolean;
+  source?: string | null;
+  editPath?: string | null;
+  preview?: string | null;
+};
+
+export type ShotContextPayloadSummary = {
+  kind?: PromptDescriptionKind | string;
+  generatedAt?: string | null;
+  source?: string;
+  attemptId?: string | null;
+  versionId?: string | null;
+  hasComposition?: boolean;
+  note?: string;
+  segments?: ShotContextPayloadSegment[];
+  images?: Array<{
+    ref?: string | null;
+    role?: string | null;
+    assetId?: string | null;
+    source?: string | null;
+    included?: boolean;
+  }>;
+  params?: Record<string, unknown> | null;
+  inspectorAction?: unknown;
+};
+
+export type ShotContext = {
+  kind: 'mirage.shot.context';
+  generatedAt: string;
+  project: {
+    id: string;
+    title?: string;
+    status?: string;
+    presetKey?: string;
+    presetLabel?: string;
+    workflowKey?: string;
+    workflowLabel?: string;
+    seedKind?: string;
+    webUrl?: string;
+    effectivePreferences?: Record<string, unknown>;
+  };
+  scene: {
+    id: string;
+    index: number;
+    label?: string;
+    timeRange?: string;
+    narrativeDescription?: string | null;
+    lyrics?: string | null;
+  };
+  shot: {
+    id: string;
+    label: string;
+    index: number;
+    durationSec?: number;
+    effectiveWorkflowMode?: 'storyboard' | 'keyframe' | string;
+    effectiveWorkflowModeSource?: string;
+    savedWorkflowMode?: string;
+    locked?: boolean;
+    promptsStale?: boolean;
+    storyboardLocked?: boolean;
+    statuses?: Record<string, unknown>;
+    baseHashes?: Record<string, string | null | undefined>;
+    lastError?: string | null;
+  };
+  promptState?: Record<string, {
+    present?: boolean;
+    status?: string;
+    preview?: string | null;
+    source?: string;
+    hash?: string | null;
+    editPath?: string;
+  }>;
+  workflowConfig?: {
+    storyboard?: Record<string, unknown>;
+    video?: Record<string, unknown>;
+    videoPromptSlots?: Record<string, { value?: boolean | null; source?: string; editPath?: string }>;
+  };
+  refs?: {
+    style?: { assetId?: string | null; url?: string | null; includedByDefault?: boolean };
+    cast?: Array<{ id: string; name?: string; hasReference?: boolean; storyboardExcluded?: boolean; videoExcluded?: boolean }>;
+    environment?: { id: string; name?: string; hasReference?: boolean; storyboardExcluded?: boolean; videoExcluded?: boolean } | null;
+    previousStoryboard?: Record<string, unknown>;
+  };
+  assets?: Record<string, string | null | undefined>;
+  promptPayloads?: {
+    storyboardRender?: ShotContextPayloadSummary;
+    video?: ShotContextPayloadSummary;
+  };
+  eligibility?: {
+    storyboard?: {
+      canRun?: boolean;
+      prerequisites?: string[];
+      provider?: string;
+      estimatedCost?: number;
+      willOverwrite?: boolean;
+    };
+    video?: {
+      canRun?: boolean;
+      prerequisites?: string[];
+      mode?: string;
+      model?: string;
+      providerDuration?: number;
+      estimatedCost?: number;
+      willOverwrite?: boolean;
+    };
+  };
+  recommendedNextActions?: string[];
+  exactPayloads?: Record<string, unknown>;
+};
+
 export const writeStoryboardPrompt = async (
   projectId: string,
   shotId: string,
@@ -784,6 +897,11 @@ export const describePrompt = async (
   if (opts.versionId) params.set('versionId', opts.versionId);
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/prompt-description?${params.toString()}`);
   return handleResponse(res) as Promise<PromptDescription>;
+};
+
+export const getShotContext = async (projectId: string, shotId: string, signal?: AbortSignal) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/context`, { signal });
+  return handleResponse(res) as Promise<ShotContext>;
 };
 
 // ─── Shot Image & Video ─────────────────────────────────────────────

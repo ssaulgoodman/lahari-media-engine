@@ -3,14 +3,15 @@
  * Single shot: expandable header, media display (video/frames), overlays,
  * version history, and prompt toolkit wiring.
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { ShotVideoPreview } from './ShotVideoPreview';
 import { PromptToolkit } from './PromptToolkit';
 import { StoryboardPanel, type StoryboardSubTab } from './StoryboardPanel';
 import { ShotVersionHistory } from './ShotVersionHistory';
-import type { ShotRefInput, StoryboardRefineMode } from '../services/api';
+import { ShotContextPanel } from './ShotContextPanel';
+import { getShotContext, isCancelled, type ShotContext, type ShotRefInput, type StoryboardRefineMode } from '../services/api';
 
 // "0:32" / "00:32" / "1:23:45" → seconds.
 const parseTimeToSec = (t?: string): number => {
@@ -142,6 +143,9 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   // panel (it owns versionId resolution); the token bump triggers its lock.
   const [storyboardLockRequestToken, setStoryboardLockRequestToken] = useState(0);
   const [headerPendingAction, setHeaderPendingAction] = useState<'image' | 'video' | 'lock' | null>(null);
+  const [shotContext, setShotContext] = useState<ShotContext | null>(null);
+  const [shotContextLoading, setShotContextLoading] = useState(false);
+  const [shotContextError, setShotContextError] = useState<string | null>(null);
   const endFrameFileRef = useRef<HTMLInputElement>(null);
 
   const isStoryboardMode = storyboardSupported && studioMode === 'storyboard';
@@ -167,6 +171,39 @@ export const ShotCard: React.FC<ShotCardProps> = ({
     || shot.imageStatus === GenerationStatus.CRITIQUING;
   const headerVideoWorking = headerPendingAction === 'video' || shot.videoStatus === GenerationStatus.LOADING;
   const headerLockWorking = headerPendingAction === 'lock' || !!isLockingShot;
+
+  const loadShotContext = useCallback(async (signal?: AbortSignal) => {
+    setShotContextLoading(true);
+    setShotContextError(null);
+    try {
+      const nextContext = await getShotContext(project.id, shot.id, signal);
+      setShotContext(nextContext);
+    } catch (err: any) {
+      if (isCancelled(err)) return;
+      setShotContextError(err?.message || 'Unable to load shot context.');
+    } finally {
+      if (!signal?.aborted) setShotContextLoading(false);
+    }
+  }, [project.id, shot.id]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    const controller = new AbortController();
+    loadShotContext(controller.signal);
+    return () => controller.abort();
+  }, [
+    isExpanded,
+    loadShotContext,
+    shot.storyboardVersionId,
+    shot.storyboardUrl,
+    shot.videoUrl,
+    shot.storyboardLocked,
+    shot.locked,
+    shot.storyboardPromptStatus,
+    shot.storyboardStatus,
+    shot.videoStatus,
+    shot.workflowMode,
+  ]);
 
   const runHeaderAction = async (action: 'image' | 'video' | 'lock', fn: () => void | Promise<void>) => {
     if (headerPendingAction) return;
@@ -632,69 +669,77 @@ export const ShotCard: React.FC<ShotCardProps> = ({
 
       {/* Prompts */}
       <div className="px-5 py-4 space-y-4 border-t border-white/[0.06]">
+        <ShotContextPanel
+          context={shotContext}
+          loading={shotContextLoading}
+          error={shotContextError}
+          onRefresh={() => loadShotContext()}
+        />
         {(shot.locked || actionable) && (
-          isStoryboardMode ? (
-            <StoryboardPanel
-              project={project}
-              shot={shot}
-              scene={scene}
-              resolveRefDisplay={resolveRefDisplay}
-              isRefining={isRefining}
-              onRefineStart={onRefineStart}
-              onRefineEnd={onRefineEnd}
-              onWriteStoryboardPrompt={onWriteStoryboardPrompt}
-              onGenerateStoryboard={onGenerateStoryboard}
-              onRefineStoryboard={onRefineStoryboard}
-              onCancelStoryboard={onCancelStoryboard}
-              onLockStoryboard={onLockStoryboard}
-              onUnlockStoryboard={onUnlockStoryboard}
-              onUpdateStoryboardPlan={onUpdateStoryboardPlan}
-              onUpdateShot={onUpdateShot}
-              onGenerateVideo={onGenerateVideo}
-              onUploadStoryboardImage={onUploadStoryboardImage}
-              setModalImage={setModalImage}
-              subTab={storyboardSubTab}
-              onSubTabChange={setStoryboardSubTab}
-              lockRequestToken={storyboardLockRequestToken}
-              hideLockControls
-            />
-          ) : (() => {
-            const autoVeoPrompt = buildAutoVeoPrompt();
-            return (
-              <PromptToolkit
+          <>
+            {isStoryboardMode ? (
+              <StoryboardPanel
                 project={project}
                 shot={shot}
                 scene={scene}
-                shotIdx={shotIdx}
-                activeTab={activeTab}
-                onTabChange={onTabChange}
-                videoOverride={videoOverride}
-                onVideoOverrideChange={onVideoOverrideChange}
-                getActiveRefs={getActiveRefs}
-                setActiveRefs={setActiveRefs}
                 resolveRefDisplay={resolveRefDisplay}
                 isRefining={isRefining}
                 onRefineStart={onRefineStart}
                 onRefineEnd={onRefineEnd}
-                isGenerating={isGenerating}
-                hasStartFrame={hasStartFrame}
-                hasVideo={hasVideo}
-                actionable={actionable}
-                modelSupportsLastFrame={modelSupportsLastFrame}
-                autoVeoPrompt={autoVeoPrompt}
-                onGenerateImage={onGenerateImage}
-                onGenerateVideo={onGenerateVideo}
-                onGenerateEndFrame={onGenerateEndFrame}
-                onRefinePrompt={onRefinePrompt}
-                onRefineEndFramePrompt={onRefineEndFramePrompt}
-                onRefineVideoPrompt={onRefineVideoPrompt}
-                onUploadShotRef={onUploadShotRef}
-                onDeleteShotRef={onDeleteShotRef}
+                onWriteStoryboardPrompt={onWriteStoryboardPrompt}
+                onGenerateStoryboard={onGenerateStoryboard}
+                onRefineStoryboard={onRefineStoryboard}
+                onCancelStoryboard={onCancelStoryboard}
+                onLockStoryboard={onLockStoryboard}
+                onUnlockStoryboard={onUnlockStoryboard}
+                onUpdateStoryboardPlan={onUpdateStoryboardPlan}
                 onUpdateShot={onUpdateShot}
+                onGenerateVideo={onGenerateVideo}
+                onUploadStoryboardImage={onUploadStoryboardImage}
                 setModalImage={setModalImage}
+                subTab={storyboardSubTab}
+                onSubTabChange={setStoryboardSubTab}
+                lockRequestToken={storyboardLockRequestToken}
+                hideLockControls
               />
-            );
-          })()
+            ) : (() => {
+              const autoVeoPrompt = buildAutoVeoPrompt();
+              return (
+                <PromptToolkit
+                  project={project}
+                  shot={shot}
+                  scene={scene}
+                  shotIdx={shotIdx}
+                  activeTab={activeTab}
+                  onTabChange={onTabChange}
+                  videoOverride={videoOverride}
+                  onVideoOverrideChange={onVideoOverrideChange}
+                  getActiveRefs={getActiveRefs}
+                  setActiveRefs={setActiveRefs}
+                  resolveRefDisplay={resolveRefDisplay}
+                  isRefining={isRefining}
+                  onRefineStart={onRefineStart}
+                  onRefineEnd={onRefineEnd}
+                  isGenerating={isGenerating}
+                  hasStartFrame={hasStartFrame}
+                  hasVideo={hasVideo}
+                  actionable={actionable}
+                  modelSupportsLastFrame={modelSupportsLastFrame}
+                  autoVeoPrompt={autoVeoPrompt}
+                  onGenerateImage={onGenerateImage}
+                  onGenerateVideo={onGenerateVideo}
+                  onGenerateEndFrame={onGenerateEndFrame}
+                  onRefinePrompt={onRefinePrompt}
+                  onRefineEndFramePrompt={onRefineEndFramePrompt}
+                  onRefineVideoPrompt={onRefineVideoPrompt}
+                  onUploadShotRef={onUploadShotRef}
+                  onDeleteShotRef={onDeleteShotRef}
+                  onUpdateShot={onUpdateShot}
+                  setModalImage={setModalImage}
+                />
+              );
+            })()}
+          </>
         )}
       </div>
       </>}
