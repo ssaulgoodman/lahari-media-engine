@@ -63,6 +63,9 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
   memories to the agent at generation time.
 - **P7 — Pro finishing is a first-class path.** Mirage should make great clips and rough cuts,
   but the long-term editor bridge should respect professional finishing workflows.
+- **P8 — Project defaults are not handcuffs.** A project can default to storyboard-mode or
+  keyframe-mode, but individual shots must be able to override that choice without forking the
+  project or confusing downstream eligibility.
 
 ## Tracks
 
@@ -123,6 +126,29 @@ longer surprises the user by silently reintroducing a previously removed segment
 **First code slice:** HF music-video storyboard video generation excludes the `beat` segment by
 default while preserving the segment in the audit as not-included. Studio and MCP both inherit
 that behavior because it lives in the composer/prompt path, not in an agent habit.
+
+### P2b — Per-Shot Workflow Mode Overrides `[ready soon]`
+
+**Goal:** Let one shot use keyframe mode inside a storyboard-first project, or storyboard mode
+inside a keyframe-first project, without changing the whole project default.
+
+Problem found in smoke/planning: project-wide mode is useful as a default, but real productions
+need exceptions. Some shots want an exact first-frame/keyframe path; others want a sketch board
+plus cut plan. Artists should not have to bend the whole project just to handle one exceptional
+shot.
+
+Work:
+
+- expose shot-level mode as an explicit saved field/default override, not an invisible UI habit
+- show the effective mode on each shot: `project default` or `shot override`
+- keep downstream eligibility clear: keyframe mode needs keyframes; storyboard mode needs an
+  active/locked board as appropriate
+- give agents the same lever through `apply_shot_workflow_modes`
+- include the mode decision in prompt/payload anatomy and local audit artifacts
+
+**Done when:** a director can set S3.1 to keyframe mode while the project remains storyboard-first,
+generate through the keyframe path, then switch only that shot back without affecting neighboring
+shots.
 
 ### P3 — Storyboard Composer Audit `[ready now]`
 
@@ -282,8 +308,12 @@ Focus areas:
 
 - clearer local draft vs canonical saved timeline state
 - clip library/media drawer as a first-class source
+- toggleable Studio/Render sidebars with smooth, non-janky animation and no layout jumps
 - original vs generated vs voice-changed clip/audio toggles
 - trim, mute, replace, align, and recover controls
+- keyboard playback ergonomics: Space toggles play/pause in Render and, where safe, Studio shot
+  preview; never steal Space while focus is inside prompt editors, textareas, inputs, selects,
+  or contenteditable fields
 - render eligibility indicator (`FFmpeg` vs `Remotion`, with reason)
 - direct access to render history and salvaged late outputs
 
@@ -327,14 +357,15 @@ Recommended order:
 
 1. P1 video payload inspector.
 2. P2 durable override parity for the same surface.
-3. P3 storyboard composer audit.
-4. P4 shot-scoped agent reads and summary-first dry-run mode.
-5. P5b async job watch discipline.
-6. P3b upload storyboard as-is.
-7. P5 local audit artifacts, P5c isolated image fix workers, and P5d agent learning loop.
-8. P7 storage/render ops fix.
-9. P6 timeline overhaul and then timeline agent actions.
-10. P6b Premiere Pro bridge after timeline/export semantics are stable.
+3. P2b per-shot workflow mode overrides.
+4. P3 storyboard composer audit.
+5. P4 shot-scoped agent reads and summary-first dry-run mode.
+6. P5b async job watch discipline.
+7. P3b upload storyboard as-is.
+8. P5 local audit artifacts, P5c isolated image fix workers, and P5d agent learning loop.
+9. P7 storage/render ops fix.
+10. P6 timeline/sidebar/playback overhaul and then timeline agent actions.
+11. P6b Premiere Pro bridge after timeline/export semantics are stable.
 
 P1/P2 are the most valuable first slice because they turn the successful smoke maneuver into a
 repeatable human/agent product surface.
@@ -352,3 +383,5 @@ repeatable human/agent product surface.
 - 2026-06-18 · P3 backend composer landed locally · — · Storyboard image render prompts now
   persist a provenance-annotated composition object on storyboard version metadata and expose it
   through storyboard history.
+- 2026-06-18 · new UX/control backlog captured · — · Added per-shot workflow mode overrides,
+  smooth toggleable sidebars, and guarded Space play/pause controls to the post-smoke roadmap.
