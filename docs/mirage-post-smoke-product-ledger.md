@@ -287,12 +287,16 @@ Rules:
 - `start_job` returns the job id and the agent should move on unless the user explicitly asks it
   to watch/poll.
 - Studio realtime and the visual timeline are the default progress surface.
+- Agent/MCP-triggered generations must live-refresh Studio without a browser refresh: pending
+  job state, completed storyboard/video assets, shot status, active board/video pointer, and
+  render timeline eligibility should update from realtime or a targeted invalidation.
 - If watching is useful, make it an explicit lightweight mode: "watch this job and notify me" or
   "poll every N seconds while I do X".
 - Long-running jobs should preserve late outputs even after the user starts an alternate attempt.
 
 **Done when:** director sessions can launch a job, continue editing another shot, and later inspect
-the completed output/history without spending chat turns on serial polling.
+the completed output/history in Studio without spending chat turns on serial polling or manually
+refreshing the browser.
 
 ### P5c — Isolated Image Fix Workers `[ready soon]`
 
@@ -415,3 +419,6 @@ repeatable human/agent product surface.
   smooth toggleable sidebars, and guarded Space play/pause controls to the post-smoke roadmap.
 - 2026-06-18 · Studio polish backlog captured · — · Added the expanded-prompt blank-scroll bug
   and delayed/janky Lock/Generate button feedback as first-class Studio interaction work.
+- 2026-06-18 · Studio live-refresh backlog captured · — · Added automatic realtime refresh for
+  agent/MCP-triggered generations so Studio reflects completed boards/videos without browser
+  refresh or agent polling loops.
