@@ -23,6 +23,7 @@ import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
 import { describePromptComposition, type PromptDescriptionKind } from '../services/codexStudio/storyboardOps.js';
+import { buildShotContext } from '../services/codexStudio/shotContext.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -752,6 +753,18 @@ router.get('/:id/shots/:shotId/prompt-description', async (req, res) => {
     res.json(await describePromptComposition(project as any, { kind, shotId, versionId }));
   } catch (err: any) {
     console.error(`[shot ${shotId}] Prompt description failed:`, err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/:id/shots/:shotId/context', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  try {
+    const project = await getFullProject(projectId);
+    res.json(await buildShotContext(project as any, shotId));
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Shot context failed:`, err);
     res.status(400).json({ error: err.message });
   }
 });

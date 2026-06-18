@@ -57,7 +57,7 @@ The exact active tool count changes as the cockpit evolves. Treat this section a
 not an inventory source; use `docs/mirage-tool-reference.md`, `server/routes/mcp.ts`, and live
 `list_actions` / `list_projects` / `mirage_doctor` for current counts.
 
-### Cockpit (6) — orchestration
+### Cockpit / read surface — orchestration
 
 | Tool | Purpose |
 |---|---|
@@ -65,6 +65,7 @@ not an inventory source; use `docs/mirage-tool-reference.md`, `server/routes/mcp
 | `open_project` | Start a session on one project; writes notebook desk copy: `state/`, root editable artifacts, `config/`, actions, skills. |
 | `create_project` | Create a non-audio project from intake. |
 | `get_project_state` | Current project graph snapshot. Includes `actionsHash` for schema drift detection. |
+| `get_shot_context` | One-shot working set: mode, refs, prompt payload summaries, saved slot defaults, generation eligibility, and next actions. Exact full prompt text stays in `describe_prompt`. |
 | `get_agent_timing_summary` | Quick perf snapshot. |
 | `mirage_capture_issue` | Capture an artist-reported issue. |
 
@@ -270,6 +271,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 - **✅ Smoke update 2026-06-16:** representative music-video storyboard-mode smoke passed well enough to continue. The useful unlock was not just stronger wording; it was prompt anatomy inspection: seeing the actual `format`/`beat`/`refs`/`cut_plan`/`audio`/`guardrail` segments made it possible to remove bad inputs and improve output quality. This moves the next work from hidden prompt tweaks to a Studio-visible payload inspector/manipulator.
 - **Current status:** `contextOverrides` remain per-call and visible as such. Durable shot-level video segment defaults now live in `shots.video_prompt_slots` and can be set through Studio's payload inspector or `apply_shot_prompts.videoPromptSlots`, so a later Studio click no longer silently reintroduces a deliberately saved exclusion.
 - **Read-side guardrail:** `describe_prompt({ kind })` is the composed prompt inspector for video and storyboard render payloads. `describe_video_prompt` is compatibility only; do not add `describe_storyboard_prompt`, `describe_look_prompt`, etc.
+- **Shot working set:** `get_shot_context(projectId, shotId)` is the summary-first read before prompt archaeology. It shows the effective mode, refs, prompt payload summaries, saved slot defaults, generation eligibility, and edit paths; exact full prompt text stays behind `describe_prompt`.
 
 **Pass log:**
 - 2026-06-10 (this commit): Seedance storyboard-video prompt hardening landed (both additions from Saul's production observations, in one slice as specced). The Identity refs block now ends with "Reference images are guides, not frames. Never insert them into the video — even briefly, even for a single frame — between or during panels." (targets the ~25% ref-frame intrusion); a new "Style discipline" paragraph after preserve-identity pins rendering/palette/line/texture to @image1 + the locked style ref and forbids mid-clip drift toward photoreal/generic (targets style drift). `board_plus_timing` variant only. Catalog template + `mirage-tool-reference.md` contract synced.
@@ -708,7 +710,7 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 
 **B · Post-test friction wins (P1, small/high-ROI)**
 - ✅ Stronger action examples (make `entityIds[]` impossible to miss) — shipped 2026-06-10
-- ☐ `get_project_state({ detail: "agent_working_set" })` — compact loop state
+- ◐ `get_shot_context(projectId, shotId)` — compact shot loop state landed locally; broader project working-set variant still optional
 - ✅ `rename_project` / title sync (shell title vs concept title divergence) — shipped 2026-06-10
 
 **C · Product quality (the real lever — currently unmeasured)**
@@ -810,7 +812,7 @@ Pass log:
 - 2026-06-10: `rename_project` shipped as a system-surface registry action (explicit rename, not an `apply_concept` side effect). See its Layer 2 pass log.
 
 **P1 soon: compact agent working set.**
-Add `get_project_state({ detail: "agent_working_set" })` for the common loop: checkpoint, entities with IDs/locked refs, shots with cast/env IDs, stale flags, weak links, and next legal actions. Current production state is useful but still larger than needed for many turns.
+Shot-level loop state now exists as `get_shot_context(projectId, shotId)`: mode, refs, prompt payload summaries, saved slot defaults, generation eligibility, and edit paths for one shot. If broad project-loop turns still feel chunky, add a project-level `agent_working_set` later; don't re-inflate `get_project_state` by default.
 
 **P1 soon: clean batch receipts.**
 `parallel_run` correctly applies state, but receipts from many actions mutating the same files can look like partial truth. This is the same mechanism as receipt-driven sync: action responses should return compact outcomes plus changed paths + hashes, not every artifact body. The bridge pulls changed files; the receipt summarizes graph mutations (`7 refs locked`, mapping, stale counts, errors) and tells the agent when to refresh canonical state.

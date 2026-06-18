@@ -46,20 +46,31 @@ Prompt (e.g. character-look) — or no prompt for pure persistence
 
 ---
 
-## Layer 1 — MCP tools (17 active)
+## Layer 1 — MCP tools (25 active)
 
-The MCP server exposes 17 tools to Codex. Action specs in Layer 2 are **not** MCP tools — they're dispatched through `run_action` / `start_job`.
+The MCP server exposes 25 non-legacy tools to Codex by default. Action specs in Layer 2 are **not** MCP tools — they're dispatched through `run_action` / `start_job`. Legacy direct tools are hidden unless `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1`.
 
-### Cockpit (6) — orchestration
+### Orientation and memory (9)
 
 | Tool | Purpose |
 |---|---|
+| `mirage_doctor` | Coherence verdict for MCP/server/CLI/notebook/plugin state. |
 | `list_projects` | List projects accessible to this auth token. |
-| `open_project` | Start a session on one project; writes notebook desk copy: `state/`, root editable artifacts, `config/`, actions, skills. |
-| `create_project` | Create a non-audio project from intake. |
-| `get_project_state` | Current project graph snapshot. Includes `actionsHash` for schema drift detection. |
+| `query_artist_memory` | Search prior projects for reusable style, concept, model, format, and taste memory. |
+| `search_artist_assets` | Search owned prior assets by category/media/project for reusable refs or renders. |
 | `get_agent_timing_summary` | Quick perf snapshot. |
-| `mirage_capture_issue` | Capture an artist-reported issue. |
+| `open_project` | Start a session on one project; writes notebook desk copy: `state/`, root editable artifacts, `config/`, actions, skills. |
+| `get_project_state` | Current project graph snapshot. Includes `actionsHash` for schema drift detection. |
+| `get_shot_context` | One-shot working set: mode, refs, prompt payload summaries, saved slot defaults, generation eligibility, and next actions. Exact full prompt text stays in `describe_prompt`. |
+| `list_personas` | List saved reusable personas for this artist. |
+
+### Creation and persona mutation (3)
+
+| Tool | Purpose |
+|---|---|
+| `create_project` | Create a project shell from title/workflow/preset/source hints. |
+| `create_project_from_persona` | Create and seed a project from a saved persona plus topic. |
+| `save_persona` | Save or update a reusable persona from existing assets/voice/tone notes. |
 
 ### Registry dispatch (8) — action invocation
 
@@ -74,13 +85,20 @@ The MCP server exposes 17 tools to Codex. Action specs in Layer 2 are **not** MC
 | `parallel_run` | Small parallel batch (independent non-paid actions, cap 8). |
 | `list_results` | List recent generation results (durable URLs/asset IDs). |
 
-### Resources (3) — project file reads
+### Notebook/sync resources (4)
 
 | Tool | Purpose |
 |---|---|
+| `mint_cli_token` | Issue shell-specific sync command for notebook materialization. |
 | `get_project_notebook_manifest` | List files in the project workbench. |
 | `read_project_notebook_file` | Read one workbench file by path. |
-| `mint_cli_token` | Issue shell-specific sync command for notebook materialization. |
+| `write_project_notebook` | Heavy no-shell fallback that returns the full notebook payload. |
+
+### Issue capture (1)
+
+| Tool | Purpose |
+|---|---|
+| `mirage_capture_issue` | Capture an artist-reported issue. |
 
 **Legacy:** ~50 direct tools hidden by default; set `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1` to surface for compatibility debugging only.
 

@@ -30,7 +30,7 @@ Use run_action for free changes such as text edits, plans, locks, imports, and c
 
 Use clear artist-facing language. The Mirage web app is the visual studio, so share returned web links for review. If a tool misbehaves or the studio disagrees with project state, call mirage_capture_issue with a short report.
 
-If the harness has a filesystem, initialize the folder once with Mirage CLI init if needed, then call mint_cli_token to sync project files and operate from AGENTS.md. If there is no filesystem, work through these tools and use get_project_state for compact state reads.
+If the harness has a filesystem, initialize the folder once with Mirage CLI init if needed, then call mint_cli_token to sync project files and operate from AGENTS.md. If there is no filesystem, work through these tools and use get_project_state for compact project reads or get_shot_context for a shot-level working set.
 ```
 
 Payload intent:
@@ -61,6 +61,7 @@ These are the main hosted artist-facing tools an agent should use.
 | `create_project` | Creates a project shell. No paid call runs. Audio seeds require upload/analysis opt-in. | title, workflow/preset/seed hints, source asset/script/brief/runtime fields | Created project plus initial project object. |
 | `open_project` | Opens a project session and returns production working set. `detail=full` is heavy debug only. | `projectId`, `detail?`, `sinceSeq?`, `note?` | Production working set, actions, recent events, web URL. |
 | `get_project_state` | Compact state by default; `full` is debug. Prompt bodies should come from notebook files. | `projectId`, `detail?` | Summary, production, or full project packet depending on detail. |
+| `get_shot_context` | One-shot working set for diagnosis/generation prep. Summary-first; exact prompt bodies stay in `describe_prompt`. | `projectId`, `shotId` | Shot mode/status, refs, prompt payload summaries, saved slot defaults, eligibility, and next actions. |
 | `list_actions` | Lean index of registry actions. Full schema is `describe_action`. | `projectId`, `surface?` | Key/surface/paid/mutates/summary/detail tool, not full schemas. |
 | `describe_action` | Returns one action's input contract, examples, and semantics. | `actionKey` | One full action spec from `actionRegistry.ts`. |
 | `run_action` | Runs a registry action by key. | `actionKey`, `input` | Lean normalized receipt. `changedArtifacts` bodies are stripped to paths/hashes. |
@@ -204,7 +205,15 @@ Runtime results are not preloaded. They enter context only when the agent calls 
 - summary counts/flags
 - compact project status
 
-Both have `detail='full'`, but full is a debug escape hatch.
+`get_shot_context`:
+
+- one shot's effective mode and source
+- refs and active assets
+- storyboard/video prompt payload summaries
+- saved slot defaults and exact edit paths
+- generation eligibility and next actions
+
+`open_project` and `get_project_state` have `detail='full'`, but full is a debug escape hatch. `get_shot_context` stays summary-first; call `describe_prompt` for one exact prompt body.
 
 ### Notebook Bodies
 

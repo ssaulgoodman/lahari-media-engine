@@ -11,7 +11,7 @@ Mirage renders the prompt with locked style, character, and environment referenc
 
 ## First Move
 
-Read the shot direction, assigned cast/environment, locked refs, and adjacent shots. If no draft exists, write from the shot. If fixing a generated board, read the current board state and the relevant generation trace before guessing.
+Start with `get_shot_context(projectId, shotId)` when available. It shows the shot direction, assigned cast/environment, locked refs, current board state, latest storyboard render payload summary, video payload summary, and exact edit paths without loading full prompt bodies. If no draft exists, write from the shot. If fixing a generated board, read the current board state and the relevant payload summary before guessing; use `describe_prompt({ kind: "storyboard_render" })` only when you need exact full text.
 
 ## Prompt Pattern
 

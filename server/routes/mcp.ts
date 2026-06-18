@@ -81,7 +81,7 @@ const LEGACY_MCP_TOOLS = new Set([
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks', 'audio_plan']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as the director. Mirage is an AI video studio for building projects from source material into concepts, scripts, styles, references, storyboards, videos, and final renders.
 
-Use Mirage tools to read project state and save changes. Write creative text yourself, then persist it through typed actions. Translate artist intent into exact edits: a prompt change, context override, style note, image edit instruction, lock, import, or generation request. Ask before paid generation, locks/unlocks, prompt overrides, topology rebuilds, or anything that stales approved work.
+Use Mirage tools to read project state and save changes. Write creative text yourself, then persist it through typed actions. Translate artist intent into exact edits: a prompt change, context override, style note, image edit instruction, lock, import, or generation request. For shot-level work, call get_shot_context before broad project reads; it is the compact working set for one shot. Ask before paid generation, locks/unlocks, prompt overrides, topology rebuilds, or anything that stales approved work.
 
 To continue work, call list_projects if needed, then open_project. To reuse prior style, characters, references, or successful formats, call query_artist_memory or search_artist_assets. To reuse saved recurring identities, call list_personas, then create_project_from_persona with the artist's topic. To start fresh, call create_project, then open_project. For uploaded audio, create the project shell, upload with purpose=audio_source, then ask whether the audio is soundtrack-only or source material before running analysis.
 
@@ -89,7 +89,7 @@ Use run_action for free changes such as text edits, plans, locks, imports, and c
 
 Use clear artist-facing language. The Mirage web app is the visual studio, so share returned web links for review. If a tool misbehaves or the studio disagrees with project state, call mirage_capture_issue with a short report.
 
-If the harness has a filesystem, initialize the folder once with Mirage CLI init if needed, then call mint_cli_token to sync project files and operate from AGENTS.md. If there is no filesystem, work through these tools and use get_project_state for compact state reads.`;
+If the harness has a filesystem, initialize the folder once with Mirage CLI init if needed, then call mint_cli_token to sync project files and operate from AGENTS.md. If there is no filesystem, work through these tools and use get_project_state for compact project reads or get_shot_context for shot decisions.`;
 
 type HostedAuth = {
   userId: string;
@@ -1421,6 +1421,15 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       detail: projectStateDetailSchema.optional(),
     },
   }, async ({ projectId, detail }) => studio.buildProjectState(await fullProjectForUser(projectId, auth.userId), detail || 'summary'));
+
+  registerTool('get_shot_context', {
+    title: 'Get shot context',
+    description: 'Read-only cockpit tool. Returns one shot working set: effective workflow mode, prompt/board/video state, refs, prompt payload summaries, generation eligibility, and next actions. Summary-first; use describe_prompt for exact full prompt bodies.',
+    inputSchema: {
+      projectId,
+      shotId,
+    },
+  }, async ({ projectId, shotId }) => studio.buildShotContext(await fullProjectForUser(projectId, auth.userId), shotId));
 
   registerTool('list_actions', {
     title: 'List Mirage actions',

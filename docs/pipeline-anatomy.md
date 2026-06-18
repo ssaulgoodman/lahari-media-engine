@@ -523,6 +523,8 @@ Audit is pull, not push: the composition is **persisted** on the generation atte
 
 `describe_prompt({ kind })` is the canonical read-side inspector. It currently supports `kind: "video"` and `kind: "storyboard_render"`; `describe_video_prompt` remains a compatibility alias only. Do not add sibling actions such as `describe_storyboard_prompt` or `describe_look_prompt`; add new composed surfaces as new `kind` values after their payloads are persisted in the same composition shape.
 
+For shot-level decisions, `get_shot_context(projectId, shotId)` is the summary-first working set: it pulls effective mode, refs, active assets, storyboard/video payload summaries, saved slot defaults, eligibility, and next actions without embedding full prompt bodies. Use it before broad project reads; use `describe_prompt` only when exact payload text is needed.
+
 **Error transparency:** `last_error` column on shots — saved on failure (truncated 500 chars), cleared on success. Shown in shot card error banner.
 
 **Version history:** `GET history` returns all versions for first frame, last frame, and video. Revert endpoints swap active pointers. Assets track `shot_id` + `category`.

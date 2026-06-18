@@ -93,6 +93,7 @@ export { queryArtistMemory, searchArtistAssets } from './codexStudio/artistMemor
 export { createProjectFromPersonaForDirector, listPersonasForDirector, savePersonaForDirector } from './codexStudio/personas.js';
 import { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 export { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
+export { buildShotContext } from './codexStudio/shotContext.js';
 export { buildProjectState } from './codexStudio/statePacket.js';
 import { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';

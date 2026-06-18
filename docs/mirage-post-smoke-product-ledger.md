@@ -221,7 +221,7 @@ storyboard render and video payloads, and MCP/Web reads use the generic
 inspector. `describe_video_prompt` remains only as a compatibility alias; do not add a family of
 `describe_*_prompt` tools.
 
-### P3c — Self-Explaining Shot Working Set `[ready now]`
+### P3c — Self-Explaining Shot Working Set `[backend/MCP landed locally; Studio panel pending]`
 
 **Goal:** A fresh agent or human can open one shot and immediately understand what controls the
 next storyboard/video generation.
@@ -256,6 +256,11 @@ Surfaces:
   reasons: workflow default, project default, shot default, one-off override, stale, or imported
 - notebook/local sync: optional compact audit artifact, useful for debugging and handoff, not a
   blocker for authoring
+
+2026-06-18 backend slice landed locally: `get_shot_context(projectId, shotId)` is a read-only
+cockpit tool plus HTTP route that returns the one-shot working set: mode/source, refs, active
+assets, prompt payload summaries, saved video slots, storyboard/video eligibility, and suggested
+next actions. It intentionally omits full prompt bodies; use `describe_prompt` for exact text.
 
 **Done when:** a new director session can open S3.1 and know: HF is applied, this storyboard
 prompt predates HF, Beat is excluded by shot default, Cut Plan is included by default, the last
@@ -489,3 +494,6 @@ repeatable human/agent product surface.
   should reveal workflow recipe, storyboard prompt provenance, storyboard/video payload summaries,
   saved slot defaults, generation eligibility, and exact edit actions so fresh agents can operate
   without chat archaeology.
+- 2026-06-18 · P3c backend/MCP slice landed locally · — · Added `get_shot_context` as the
+  summary-first shot working set for agents and HTTP callers. Studio's visible "Shot state /
+  Recipe & payload" panel remains the next P3c product slice.

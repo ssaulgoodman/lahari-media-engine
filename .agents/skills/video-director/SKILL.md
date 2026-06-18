@@ -9,7 +9,7 @@ Video is the expensive end of the pipeline. Your job is to make sure the still i
 
 ## First Move
 
-Read the shot state, mode, locked board/frame, motion prompt, audio plan, and recent generation trace. Ask:
+Start with `get_shot_context(projectId, shotId)` when available. It gives the shot mode, locked board/frame, refs, prompt payload summaries, saved slot defaults, generation eligibility, and next actions without pulling the whole project or full prompt bodies. Then ask:
 
 - Is this **keyframe mode** or **storyboard mode**?
 - Is the board/frame good enough to animate?
@@ -57,7 +57,8 @@ Weak:
 - **One exact final prompt needed** -> use `promptOverride` on `generate_video`.
 - **One storyboard-video prompt segment is hurting one call** -> use `contextOverrides` on `generate_video` dry-run first, e.g. `{ includeShotBeat: false }` or `{ includeCutPlan: false }`, then generate only after the composition reads clean. If that decision should survive later Studio/agent regenerations, persist it with `apply_shot_prompts({ shots: [{ shotId, videoPromptSlots: { includeShotBeat: false, includeCutPlan: true } }] })`.
 - **Storyboard video needs a different or extra reference image** -> use `contextOverrides` on `generate_video`, e.g. `{ includeEnvironmentRefs: ["start_env_id", "destination_env_id"] }`, `{ includeCastRefs: ["speaker_id"] }`, `{ includePreviousStoryboard: false }`, or `{ includeStyleImage: false }`. Dry-run first and confirm the `composition.images` list contains the intended refs before spending.
-- **Need to know what was actually sent last time** -> `run_action(describe_prompt, { kind: "video" })` for video, or `run_action(describe_prompt, { kind: "storyboard_render" })` for storyboard renders. `describe_video_prompt` is compatibility only.
+- **Need one-shot working state** -> `get_shot_context(projectId, shotId)`.
+- **Need exact full payload text from last time** -> `run_action(describe_prompt, { kind: "video" })` for video, or `run_action(describe_prompt, { kind: "storyboard_render" })` for storyboard renders. `describe_video_prompt` is compatibility only.
 - **Repeatable format needed** -> `run_action(list_workflows)`, then `run_action(apply_project_workflow)` if a named recipe fits. After that, fill the stored recipe's slots with `recipeSlots` and project dialogue; do not rewrite the wrapper.
 - **Native dialogue voice needs character match** -> generate the raw native-audio clip first, review it, then use `voice_change_video` from the audio surface. Do not solve this with TTS unless the artist wants overlay.
 - **Board/frame wrong** -> return to storyboarding/keyframe tools before video.
