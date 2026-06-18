@@ -204,13 +204,13 @@ Work:
 **Backend slice landed locally:** storyboard image rendering now uses a provenance-returning
 composer. Generated/refined storyboard versions persist `metadata.promptComposition` with exact
 sent text, segment sources/edit paths, attached images, provider params, and HF/default render
-mode. Storyboard history exposes this object. Remaining work is product surface: Studio payload
-UI and a generic `describe_prompt({ kind })` read action when we expose composed reads beyond
-video.
+mode. Storyboard history exposes this object. Studio now renders the same payload inspector for
+storyboard render and video payloads, and MCP/Web reads use the generic
+`describe_prompt({ kind })` path.
 
-**Read-side rule:** `describe_video_prompt` is only the prototype. When storyboard becomes the
-second composed surface, design `describe_prompt({ kind, projectId, shotId?, entityId? })`
-instead of adding a family of `describe_*_prompt` tools.
+**Read-side rule:** `describe_prompt({ kind, projectId, shotId?, entityId? })` is the canonical
+inspector. `describe_video_prompt` remains only as a compatibility alias; do not add a family of
+`describe_*_prompt` tools.
 
 ### P3b — Upload Storyboard As-Is `[landed locally]`
 

@@ -173,6 +173,7 @@ const lookEntityTypeSchema = z.enum(['cast', 'environment', 'env']);
 const actionKeySchema = z.enum(ACTION_KEYS);
 const actionSurfaceSchema = z.enum(ACTION_SURFACES);
 const projectStateDetailSchema = z.enum(['summary', 'production', 'full']);
+const promptDescriptionKindSchema = z.enum(['video', 'storyboard_render']);
 const localDoctorStatusSchema = z.record(z.string(), z.unknown()).optional();
 const actionInputSchema = z.record(z.string(), z.unknown()).optional();
 const jobStatusSchema = z.enum(['running', 'success', 'error']);
@@ -337,6 +338,12 @@ const generateVideoInputSchema = z.object({
     excludeEnvironmentRefs: maxArray(idString, 80).optional(),
     includePreviousStoryboard: z.boolean().optional(),
   }).optional(),
+});
+const describePromptInputSchema = z.object({
+  projectId,
+  kind: promptDescriptionKindSchema,
+  shotId,
+  versionId: idString.optional(),
 });
 const applyVideoPromptInputSchema = z.object({
   projectId,
@@ -1172,9 +1179,20 @@ const createHostedMcpServer = (auth: HostedAuth) => {
           contextOverrides: input.contextOverrides,
         });
     }
+    if (actionKey === 'describe_prompt') {
+      const input = describePromptInputSchema.parse(rawInput);
+      return studio.describePromptComposition(await fullProjectForUser(input.projectId, auth.userId), {
+        kind: input.kind,
+        shotId: input.shotId,
+        versionId: input.versionId,
+      });
+    }
     if (actionKey === 'describe_video_prompt') {
       const input = z.object({ projectId, shotId }).parse(rawInput);
-      return studio.getShotVideoPromptComposition(await fullProjectForUser(input.projectId, auth.userId), input.shotId);
+      return studio.describePromptComposition(await fullProjectForUser(input.projectId, auth.userId), {
+        kind: 'video',
+        shotId: input.shotId,
+      });
     }
     if (actionKey === 'apply_video_prompt') {
       const input = applyVideoPromptInputSchema.parse(rawInput);

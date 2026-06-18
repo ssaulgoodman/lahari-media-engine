@@ -633,6 +633,51 @@ export type StoryboardVersionEntry = {
   createdAt: string;
 };
 
+export type PromptDescriptionKind = 'video' | 'storyboard_render';
+
+export type PromptCompositionSegment = {
+  slot?: string;
+  label?: string;
+  source?: string;
+  editPath?: string;
+  included?: boolean;
+  text?: string;
+  value?: unknown;
+};
+
+export type PromptCompositionImage = {
+  label?: string;
+  source?: string;
+  url?: string;
+  assetId?: string;
+  role?: string;
+  included?: boolean;
+};
+
+export type PromptComposition = {
+  text?: string;
+  finalPrompt?: string;
+  prompt?: string;
+  params?: Record<string, unknown>;
+  images?: PromptCompositionImage[];
+  segments?: PromptCompositionSegment[];
+  [key: string]: unknown;
+};
+
+export type PromptDescription = {
+  kind: PromptDescriptionKind;
+  surface?: string;
+  projectId: string;
+  shotId: string;
+  versionId?: string | null;
+  attemptId?: string | null;
+  generatedAt?: string | null;
+  source?: string;
+  composition?: PromptComposition | null;
+  webUrl?: string;
+  note?: string;
+};
+
 export const writeStoryboardPrompt = async (
   projectId: string,
   shotId: string,
@@ -719,6 +764,18 @@ export const updateStoryboardPlan = async (projectId: string, shotId: string, cu
 export const getStoryboardHistory = async (projectId: string, shotId: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/storyboard-history`);
   return handleResponse(res) as Promise<{ versions: StoryboardVersionEntry[] }>;
+};
+
+export const describePrompt = async (
+  projectId: string,
+  shotId: string,
+  kind: PromptDescriptionKind,
+  opts: { versionId?: string } = {},
+) => {
+  const params = new URLSearchParams({ kind });
+  if (opts.versionId) params.set('versionId', opts.versionId);
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/prompt-description?${params.toString()}`);
+  return handleResponse(res) as Promise<PromptDescription>;
 };
 
 // ─── Shot Image & Video ─────────────────────────────────────────────

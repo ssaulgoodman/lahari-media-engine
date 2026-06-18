@@ -83,6 +83,14 @@ type ModelOverride = {
   videoModel?: string;
 };
 
+export type PromptDescriptionKind = 'video' | 'storyboard_render';
+
+type DescribePromptInput = {
+  kind: PromptDescriptionKind;
+  shotId: string;
+  versionId?: string;
+};
+
 export const planGenerateStoryboard = (project: Project, shotId: string, modelOverride: ModelOverride = {}) => {
   const target = findProjectShot(project, shotId);
   if (!target) throw new Error(`Shot not found in project: ${shotId}`);
@@ -1498,10 +1506,7 @@ export const previewGenerateVideo = async (
   };
 };
 
-// Read what WAS sent for the most recent video generation of a shot — the
-// persisted composition on the generation attempt. Exact post-hoc audit (current
-// shot state may have drifted from what was actually sent), read-only.
-export const getShotVideoPromptComposition = async (project: Project, shotId: string) => {
+const describeVideoPrompt = async (project: Project, shotId: string) => {
   const rows = await selectAll('generation_attempts', {
     project_id: project.id,
     shot_id: shotId,
@@ -1510,11 +1515,14 @@ export const getShotVideoPromptComposition = async (project: Project, shotId: st
   const row = rows[0] as any;
   const composition = row?.request_summary?.promptComposition || null;
   return {
-    kind: 'mirage.shot_video_prompt',
+    kind: 'video',
+    surface: 'video',
     projectId: project.id,
     shotId,
     attemptId: row?.id || null,
+    versionId: null,
     generatedAt: row?.created_at || null,
+    source: 'generation_attempts.request_summary.promptComposition',
     composition,
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-video' }),
     note: composition
@@ -1522,6 +1530,56 @@ export const getShotVideoPromptComposition = async (project: Project, shotId: st
       : 'No prior video generation found for this shot. Use generate_video dryRun to preview the composition before spending.',
   };
 };
+
+const describeStoryboardRenderPrompt = async (project: Project, shotId: string, versionId?: string) => {
+  const filters = versionId
+    ? { project_id: project.id, shot_id: shotId, id: versionId }
+    : { project_id: project.id, shot_id: shotId };
+  const rows = await selectAll('storyboard_versions', filters, {
+    orderBy: 'created_at',
+    ascending: false,
+    limit: 1,
+  });
+  const row = rows[0] as any;
+  let metadata: Record<string, any> = {};
+  if (row?.metadata) {
+    if (typeof row.metadata === 'object') metadata = row.metadata;
+    else {
+      try { metadata = JSON.parse(row.metadata); } catch { metadata = {}; }
+    }
+  }
+  const composition = metadata.promptComposition || null;
+  return {
+    kind: 'storyboard_render',
+    surface: 'storyboard',
+    projectId: project.id,
+    shotId,
+    versionId: row?.id || versionId || null,
+    attemptId: null,
+    generatedAt: row?.created_at || null,
+    source: 'storyboard_versions.metadata.promptComposition',
+    composition,
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
+    note: composition
+      ? 'What was actually sent for this storyboard render, decomposed by source + edit path. Edit the named source to change it.'
+      : versionId
+        ? 'No composed storyboard render payload found for this version. Older versions may predate composition capture, or the version id may not exist on this shot.'
+        : 'No composed storyboard render payload found for this shot. Generate a storyboard with the current engine to capture one.',
+  };
+};
+
+// Generic read-side prompt audit. This is the canonical inspector for composed
+// generation payloads; keep narrow aliases only for backwards compatibility.
+export const describePromptComposition = async (project: Project, input: DescribePromptInput) => {
+  if (input.kind === 'video') return describeVideoPrompt(project, input.shotId);
+  if (input.kind === 'storyboard_render') return describeStoryboardRenderPrompt(project, input.shotId, input.versionId);
+  throw new Error(`Unsupported prompt description kind: ${(input as any).kind}`);
+};
+
+// Compatibility alias for old agents. New callers should use
+// describe_prompt({ kind: "video" }).
+export const getShotVideoPromptComposition = async (project: Project, shotId: string) =>
+  describePromptComposition(project, { kind: 'video', shotId });
 
 export const applyGenerateVideo = async (
   project: Project,

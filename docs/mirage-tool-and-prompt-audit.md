@@ -269,11 +269,11 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 **Notes:**
 - **✅ Smoke update 2026-06-16:** representative music-video storyboard-mode smoke passed well enough to continue. The useful unlock was not just stronger wording; it was prompt anatomy inspection: seeing the actual `format`/`beat`/`refs`/`cut_plan`/`audio`/`guardrail` segments made it possible to remove bad inputs and improve output quality. This moves the next work from hidden prompt tweaks to a Studio-visible payload inspector/manipulator.
 - **Current gap:** `contextOverrides` are per-call. If Codex drops `includeShotBeat` for one generation, Studio does not automatically inherit that choice on a later click unless the state is persisted somewhere explicit. The product rule should be: one-off overrides are visible as one-off; "save as shot/project default" is a separate deliberate action.
-- **Read-side guardrail:** `describe_video_prompt` is a prototype for composed prompt inspection, not a naming pattern to multiply. When storyboard generation becomes the second composed surface, fold read inspection toward `describe_prompt({ kind })` instead of adding `describe_storyboard_prompt`, `describe_look_prompt`, etc.
+- **Read-side guardrail:** `describe_prompt({ kind })` is the composed prompt inspector for video and storyboard render payloads. `describe_video_prompt` is compatibility only; do not add `describe_storyboard_prompt`, `describe_look_prompt`, etc.
 
 **Pass log:**
 - 2026-06-10 (this commit): Seedance storyboard-video prompt hardening landed (both additions from Saul's production observations, in one slice as specced). The Identity refs block now ends with "Reference images are guides, not frames. Never insert them into the video — even briefly, even for a single frame — between or during panels." (targets the ~25% ref-frame intrusion); a new "Style discipline" paragraph after preserve-identity pins rendering/palette/line/texture to @image1 + the locked style ref and forbids mid-clip drift toward photoreal/generic (targets style drift). `board_plus_timing` variant only. Catalog template + `mirage-tool-reference.md` contract synced.
-- 2026-06-16 (`ee873d2`): storyboard-video prompt composition was simplified and made inspectable. The recipe owns board-treatment/format language, the wrapper owns universal animation/guardrail structure, `contextOverrides` can drop slots such as beat/cut plan/refs/audio for one call, dry-run exposes the composed segments before spend, and the latest generation can be inspected via `describe_video_prompt`.
+- 2026-06-16 (`ee873d2`): storyboard-video prompt composition was simplified and made inspectable. The recipe owns board-treatment/format language, the wrapper owns universal animation/guardrail structure, `contextOverrides` can drop slots such as beat/cut plan/refs/audio for one call, dry-run exposes the composed segments before spend, and the latest generation can be inspected via `describe_prompt({ kind: "video" })`.
 
 #### apply_video_prompt
 
@@ -956,9 +956,8 @@ Next prompt work should prioritize visibility and manipulation over more hidden 
 - **Storyboard composer audit:** repeat the video prompt-anatomy cleanup for storyboard
   generation: one owner for universal guardrails, recipe-owned format language, persisted
   attempt anatomy, dry-run/describe support, and no duplicate/conflicting wrapper text.
-- **Generic describe shape:** keep `describe_video_prompt` as the prototype. Do not add sibling
-  tools for every surface; once the second composed surface lands, design
-  `describe_prompt({ kind, projectId, shotId?, entityId? })`.
+- **Generic describe shape:** use `describe_prompt({ kind, projectId, shotId?, entityId? })`
+  for composed payload reads. `describe_video_prompt` is a legacy alias, not a pattern.
 - **Render/timeline follow-on:** payload visibility should land before deep timeline-agent
   actions. Once timeline primitives are visually clean, add agent actions for trim, mute,
   replace canonical clip, align audio, and repair durations.

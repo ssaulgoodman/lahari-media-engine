@@ -17,8 +17,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
-import { getStoryboardHistory } from '../services/api';
-import type { ShotRefInput, StoryboardRefineMode } from '../services/api';
+import { getStoryboardHistory, describePrompt } from '../services/api';
+import type { PromptDescription, ShotRefInput, StoryboardRefineMode, StoryboardVersionEntry } from '../services/api';
+import { PromptCompositionInspector } from './PromptCompositionInspector';
 
 // Exported so ShotCard can hold the sub-tab as the single source of truth
 // and key the displayed media (storyboard image vs. video) off the same
@@ -103,6 +104,9 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   const [savedPromptText, setSavedPromptText] = useState<string>('');
   const [planLoading, setPlanLoading] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [activeStoryboardVersion, setActiveStoryboardVersion] = useState<StoryboardVersionEntry | null>(null);
+  const [videoPromptDescription, setVideoPromptDescription] = useState<PromptDescription | null>(null);
+  const [videoPromptLoading, setVideoPromptLoading] = useState(false);
   const savedFlashTimer = useRef<number | null>(null);
   const refineRef = useRef<HTMLTextAreaElement>(null);
   const [refineImage, setRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
@@ -196,6 +200,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
       setSavedPlanText(shot.storyboardCutPlan || '');
       setPromptText(shot.storyboardPrompt || '');
       setSavedPromptText(shot.storyboardPrompt || '');
+      setActiveStoryboardVersion(null);
       setSaveState('idle');
       return;
     }
@@ -205,6 +210,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
       .then(d => {
         if (cancelled) return;
         const active = d.versions.find(v => v.id === versionId);
+        setActiveStoryboardVersion(active || null);
         const text = active?.cutPlanText || shot.storyboardCutPlan || '';
         setCutPlanText(text);
         setSavedPlanText(text);
@@ -216,10 +222,22 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
         if (cancelled) return;
         setCutPlanText('');
         setSavedPlanText('');
+        setActiveStoryboardVersion(null);
       })
       .finally(() => { if (!cancelled) setPlanLoading(false); });
     return () => { cancelled = true; };
   }, [project.id, shot.id, versionId]);
+
+  useEffect(() => {
+    if (subTab !== 'video') return;
+    let cancelled = false;
+    setVideoPromptLoading(true);
+    describePrompt(project.id, shot.id, 'video')
+      .then((description) => { if (!cancelled) setVideoPromptDescription(description); })
+      .catch(() => { if (!cancelled) setVideoPromptDescription(null); })
+      .finally(() => { if (!cancelled) setVideoPromptLoading(false); });
+    return () => { cancelled = true; };
+  }, [project.id, shot.id, shot.videoUrl, shot.videoStatus, subTab]);
 
   // Sync local state when the server-side prompt/cutplan change without an
   // accompanying versionId bump. Happens specifically on `replan` refines:
@@ -594,6 +612,20 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           hideLockControls={hideLockControls}
           refineImage={refineImage}
           onRefineImageChange={setRefineImage}
+          promptDescription={activeStoryboardVersion ? {
+            kind: 'storyboard_render',
+            surface: 'storyboard',
+            projectId: project.id,
+            shotId: shot.id,
+            versionId: activeStoryboardVersion.id,
+            attemptId: null,
+            generatedAt: activeStoryboardVersion.createdAt,
+            source: 'storyboard_versions.metadata.promptComposition',
+            composition: activeStoryboardVersion.promptComposition as any,
+            note: activeStoryboardVersion.promptComposition
+              ? 'What was actually sent for this storyboard render.'
+              : 'This storyboard version predates prompt composition capture, or was imported manually.',
+          } : null}
           onWriteStoryboardPrompt={onWriteStoryboardPrompt}
           onGenerateStoryboard={onGenerateStoryboard}
           onUploadStoryboardClick={onUploadStoryboardImage ? () => uploadStoryboardInputRef.current?.click() : undefined}
@@ -622,6 +654,8 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           recentlyRefined={recentlyRefined}
           onUpdateShot={onUpdateShot}
           onGenerateVideo={onGenerateVideo}
+          promptDescription={videoPromptDescription}
+          promptDescriptionLoading={videoPromptLoading}
         />
       )}
       <input
@@ -673,6 +707,7 @@ interface StoryboardTabBodyProps {
   hideLockControls: boolean;
   refineImage: { file: File; previewUrl: string } | null;
   onRefineImageChange: (image: { file: File; previewUrl: string } | null) => void;
+  promptDescription?: PromptDescription | null;
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
   onUploadStoryboardClick?: () => void;
@@ -691,6 +726,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   onPromptChange, onPlanBlur,
   isPromptCollapsed, onTogglePromptCollapse, recentlyRefined,
   refineImage, onRefineImageChange,
+  promptDescription,
   onWriteStoryboardPrompt, onGenerateStoryboard, onUploadStoryboardClick, uploadingStoryboard, onCancelStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
   const saving = saveState === 'saving';
@@ -780,6 +816,16 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
           </div>
         )}
       </div>
+
+      {(hasStoryboard || promptDescription?.composition) && (
+        <PromptCompositionInspector
+          title="Image payload"
+          composition={promptDescription?.composition || null}
+          note={promptDescription?.note}
+          generatedAt={promptDescription?.generatedAt}
+          source={promptDescription?.source}
+        />
+      )}
 
       {/* Cut plan editor moved to Video tab. "Write prompt" still fills both
           shot.storyboardPrompt (shown above) and shot.storyboardCutPlan (the
@@ -1051,6 +1097,8 @@ interface VideoTabBodyProps {
   recentlyRefined: boolean;
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
+  promptDescription?: PromptDescription | null;
+  promptDescriptionLoading?: boolean;
 }
 
 const VideoTabBody: React.FC<VideoTabBodyProps> = ({
@@ -1058,6 +1106,7 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
   planLoading, saveState, dirty, onCutPlanChange, onPlanBlur, onPlanRetry,
   recentlyRefined,
   onUpdateShot, onGenerateVideo,
+  promptDescription, promptDescriptionLoading = false,
 }) => {
   // Cut plan was previously REQUIRED to generate video; the artist's
   // "follow storyboard, no cut plan" workflow makes that a soft hint
@@ -1124,6 +1173,16 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
           Seedance reads the locked storyboard image plus this text as the motion/cut guide. {isLocked ? 'Unlock the storyboard to edit.' : 'Writing or refining the storyboard prompt also fills this field.'}
         </p>
       </div>
+
+      {(hasVideo || promptDescription?.composition || promptDescriptionLoading) && (
+        <PromptCompositionInspector
+          title={promptDescriptionLoading ? 'Video payload loading…' : 'Video payload'}
+          composition={promptDescription?.composition || null}
+          note={promptDescription?.note || (promptDescriptionLoading ? 'Loading the latest captured video prompt payload.' : undefined)}
+          generatedAt={promptDescription?.generatedAt}
+          source={promptDescription?.source}
+        />
+      )}
 
       <label className="surface-inset rounded-md px-3 py-2 flex items-start gap-3 cursor-pointer">
         <input

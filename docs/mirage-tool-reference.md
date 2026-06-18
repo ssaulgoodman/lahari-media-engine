@@ -86,7 +86,7 @@ The MCP server exposes 17 tools to Codex. Action specs in Layer 2 are **not** MC
 
 ---
 
-## Layer 2 — Actions (27 live registry actions; 26 materialized for agents)
+## Layer 2 — Actions
 
 Every action is agent-callable via `run_action(actionKey, input)` or `start_job(actionKey, input)`. **"Calls"** column tells you what runs when the agent invokes it.
 
@@ -116,6 +116,7 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 | `apply_audio_plan` | audio | Saves Codex-written dialogue + sound notes per shot | DB only | — |
 | `apply_cast_voice` | audio | Assigns ElevenLabs voice ID to a cast member | DB only | — |
 | `rename_project` | system | Renames the project shell title (lists/sidebar/header); graph content untouched | DB only | — |
+| `describe_prompt` | system | Reads the persisted composed prompt payload for video or storyboard render outputs | DB read | — |
 | `apply_project_preferences` | system | Saves project model/provider routing | DB only | — |
 | `apply_project_style_notes` | system | Saves project per-surface style notes (taste memory) | DB only | — |
 | `apply_project_prompt_override` | system | Saves project-scoped prompt recipe override | DB only | — |

@@ -587,6 +587,24 @@ export const STYLE_ACTION_SPECS = {
 } as const;
 
 export const SYSTEM_ACTION_SPECS = {
+  describe_prompt: {
+    key: 'describe_prompt',
+    title: 'Describe prompt',
+    surface: 'system',
+    mutates: false,
+    paid: false,
+    description: 'Read the exact composed prompt payload for a generated artifact. Supports video and storyboard render payloads through one generic inspector; use generate_video dryRun for "what would be sent now" before spending.',
+    input: {
+      projectId: 'string',
+      kind: '"video" | "storyboard_render"',
+      shotId: 'string',
+      versionId: 'optional storyboard version id; only for kind="storyboard_render"',
+    },
+    examples: [
+      { projectId: 'project_uuid', kind: 'video', shotId: 'shot_uuid' },
+      { projectId: 'project_uuid', kind: 'storyboard_render', shotId: 'shot_uuid' },
+    ],
+  },
   list_workflows: {
     key: 'list_workflows',
     title: 'List workflows',

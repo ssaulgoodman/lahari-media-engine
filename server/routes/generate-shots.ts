@@ -22,6 +22,7 @@ import { eventResultPointers, recordDirectorEvent } from '../services/directorEv
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
+import { describePromptComposition, type PromptDescriptionKind } from '../services/codexStudio/storyboardOps.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -736,6 +737,23 @@ router.get('/:id/shots/:shotId/storyboard-history', async (req, res) => {
       };
     }),
   });
+});
+
+router.get('/:id/shots/:shotId/prompt-description', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  const kind = String(req.query.kind || '').trim() as PromptDescriptionKind;
+  if (kind !== 'video' && kind !== 'storyboard_render') {
+    return res.status(400).json({ error: 'kind must be "video" or "storyboard_render"' });
+  }
+  const versionId = typeof req.query.versionId === 'string' ? req.query.versionId : undefined;
+  try {
+    const project = await getFullProject(projectId);
+    res.json(await describePromptComposition(project as any, { kind, shotId, versionId }));
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Prompt description failed:`, err);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // End frame and frame-pair endpoints removed — the new workflow captures the
