@@ -67,9 +67,10 @@ const fixtures = [
 
 const assertPlannerPromptContract = (name: string, prompt: string) => {
   assert.match(prompt, /canonical graph names/, `${name}: prompt should teach canonical graph names`);
-  assert.match(prompt, /locked style reference image as the primary style source/, `${name}: prompt should make style image primary`);
-  assert.match(prompt, /short clarification derived from that image/, `${name}: prompt should keep style text derivative`);
-  assert.match(prompt, /Do not introduce a new genre, medium, palette, lighting scheme, or finish/, `${name}: prompt should block competing style text`);
+  assert.match(prompt, /black-and-white sketch planning sheet/, `${name}: prompt should make sketch planning canonical`);
+  assert.match(prompt, /pure white paper/, `${name}: prompt should require white paper`);
+  assert.match(prompt, /strict black-and-white ink\/pencil linework/, `${name}: prompt should require black-and-white linework`);
+  assert.match(prompt, /stripping their color and final-render texture into sketch guidance/, `${name}: prompt should translate refs into sketch guidance`);
   assert.match(prompt, /2x2, 2x3, or 3x3 grid/, `${name}: prompt should require supported grid layouts`);
   assert.match(prompt, /Do not use 3-panel boards/, `${name}: prompt should reject 3-panel boards`);
   assert.match(prompt, /no captions, numbers, labels, arrows, speech bubbles, subtitles, readable text, logos, or watermarks/, `${name}: prompt should preserve no-text rule`);
@@ -81,8 +82,9 @@ const assertSkillContract = () => {
   const packagedSkill = readFileSync('server/resources/skills/storyboarding/SKILL.md', 'utf8');
   assert.equal(localSkill, packagedSkill, 'local and packaged storyboarding skills must match');
   assert.match(localSkill, /Use exact project names for those references; Mirage binds those names to the attached images at render time\./, 'skill should teach graph-name binding positively');
-  assert.match(localSkill, /Style wording should come from the locked style reference\./, 'skill should make style ref primary');
-  assert.match(localSkill, /do not invent a separate genre, palette, lighting scheme, or finish/, 'skill should reject competing style text');
+  assert.match(localSkill, /Canonical Mirage storyboards are black-and-white sketch planning sheets/, 'skill should make sketch boards canonical');
+  assert.match(localSkill, /GPT Image 2 is the default storyboard provider/, 'skill should name GPT Image 2 as default storyboard provider');
+  assert.match(localSkill, /Final video style comes later from the locked style\/cast\/environment refs/, 'skill should separate board plan from final video style');
   assert.match(localSkill, /No board exists yet/, 'skill should separate missing board from bad premise');
   assert.match(localSkill, /The board premise is wrong/, 'skill should fix bad premise before paid regen');
   assert.doesNotMatch(localSkill, /whole premise is wrong/, 'skill should not tell agents to regenerate vague bad premises');

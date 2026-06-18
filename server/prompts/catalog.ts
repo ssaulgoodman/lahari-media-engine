@@ -560,7 +560,7 @@ OUTPUT CONTRACT
     model: 'project.text_provider.refine',
     modelLabel: 'Project text provider (refine)',
     triggeredBy: "Fires when you click 'Board prompts' or per-shot 'Write prompt' in Seedance storyboard mode.",
-    summary: 'Composer-backed planner step. Converts one shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video. The saved prompt uses canonical cast/environment names and focuses on blocking, action, staging, and continuity. The render step binds those names to locked refs; the planner should not restate character costumes, faces, environment design, or style prose.',
+    summary: 'Composer-backed planner step. Converts one shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video. The saved prompt uses canonical cast/environment names and focuses on black-and-white sketch-board blocking, action, staging, geography, camera logic, and continuity. The render step binds those names to locked refs and converts them into sketch guidance; the planner should not restate character costumes, faces, environment design, or final-render style prose.',
     variables: [
       { name: 'title', description: 'Song title' },
       { name: 'concept', description: 'Locked concept summary' },
@@ -603,11 +603,11 @@ USER NOTE POLICY
 OUTPUT CONTRACT
 Return only JSON:
 {
-  "storyboardPrompt": "complete image-model prompt with 2x2, 2x3, or 3x3 grid layout (4, 6, or 9 panels), one-line shot setup using canonical cast/environment names, per-panel blocking/action descriptions inline, continuity between panels, and no-text-in-panels rule",
+  "storyboardPrompt": "complete image-model prompt for a black-and-white sketch planning sheet with 2x2, 2x3, or 3x3 grid layout (4, 6, or 9 panels), one-line shot setup using canonical cast/environment names, per-panel blocking/action descriptions inline, continuity between panels, and no-text-in-panels rule",
   "cutPlanText": "Panel N — <action> per panel, one line each"
 }
 
-storyboardPrompt stays lean, roughly under 220 words. Use a 2x2, 2x3, or 3x3 grid with 16:9 panels and borders/background. Do not use 3-panel boards. No character design prose, environment design prose, contract bullet lists, animation rules, emotional-arc prose, quality boilerplate, readable text, captions, logos, or watermarks.`,
+storyboardPrompt stays lean, roughly under 220 words. Use a 2x2, 2x3, or 3x3 grid with 16:9 panels, thin black borders, generous gaps, and pure white paper. Strictly black-and-white pen-and-pencil sketch style, optional gray shading only. Do not use 3-panel boards. No character design prose, environment design prose, color, final-render texture, contract bullet lists, animation rules, emotional-arc prose, quality boilerplate, readable text, captions, logos, or watermarks.`,
     source: { file: 'server/prompts/storyboard.ts + server/services/seedance-storyboard-rd.ts', lines: 'buildStoryboardPlannerPrompt / buildStoryboardPrompt' },
   },
   {
@@ -618,18 +618,21 @@ storyboardPrompt stays lean, roughly under 220 words. Use a 2x2, 2x3, or 3x3 gri
     model: 'project.storyboard_provider',
     modelLabel: 'Project storyboard provider',
     triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists. Bulk button regenerates already-rendered (unlocked) boards too — only locked shots are skipped.",
-    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs. Before rendering, Mirage prepends a generated reference binding map so names in the saved prompt resolve to the correct attached images. Cut plan is NOT sent — it is for the downstream Seedance video step only.',
+    summary: 'Image-only render step. Sends the canonical black-and-white sketch-board render contract, saved storyboardPrompt, and locked style/cast/environment refs to the selected storyboard provider. Mirage prepends a generated reference binding map so names in the saved prompt resolve to the correct attached images. Cut plan is NOT sent — it is for the downstream Seedance video step only.',
     variables: [
       { name: 'storyboardPrompt', description: 'Saved image-render prompt on the shot. Only field required for image gen.' },
-      { name: 'storyboardProvider', description: 'Project storyboard provider: nano-banana-2 | nano-banana-pro | gpt-image-2' },
+      { name: 'storyboardProvider', description: 'Project storyboard provider: default gpt-image-2 | alternates nano-banana-2, nano-banana-pro' },
       { name: 'referenceImages', description: 'Locked style, cast, environment refs (filtered by shot.excluded_refs.storyboard). When shot.use_prev_storyboard_ref is true, the prev shot\'s locked storyboard is also attached. In edit_image refine mode, the previous storyboard image is prepended; an artist-attached refinement ref is appended last.' },
       { name: 'artistNote', description: 'Only used in edit_image mode as an image edit instruction.' },
     ],
-    template: `{{generated reference binding map}}
+    template: `HF STORYBOARD RENDER CONTRACT
+{{canonical black-and-white sketch-board contract}}
+
+{{generated reference binding map}}
 
 {{storyboardPrompt}}
 
-{{editImageMode ? "Edit the provided storyboard image. Preserve panel layout, characters, environment, style, and continuity unless the instruction explicitly changes them.\\n\\nEdit instruction:\\n" + artistNote + (artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only." : "") : ""}}`,
+{{editImageMode ? "Edit the provided storyboard image. Preserve panel layout, subject positions, geography, and continuity unless the instruction explicitly changes them. Do not preserve color, photoreal finish, final-render texture, or colored reference styling.\\n\\nEdit instruction:\\n" + artistNote + (artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only." : "") : ""}}`,
     source: { file: 'server/services/storyboard.ts', lines: 'generateStoryboardVersion / renderWithProvider' },
   },
   {

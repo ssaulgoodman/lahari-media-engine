@@ -301,9 +301,8 @@ ${opts?.nativeAudioEnabled ? 'Generate synchronized native audio when the prompt
 
   // board_plus_timing delegates to the shared composer (videoPromptComposition.ts)
   // so there is one source of truth for the storyboard video prompt. With no
-  // formatIntent, the composer emits its default "match the board" treatment;
-  // recipe-aware board treatment (e.g. HF sketch plan) is supplied by
-  // videoGeneration.ts as the format segment.
+  // formatIntent, the composer emits its canonical sketch-plan treatment;
+  // special project recipes can still supply a custom format segment.
   const refs = opts?.refs || [];
   return composeStoryboardVideoPrompt({
     toolName: preset.toolName,

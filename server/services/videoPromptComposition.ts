@@ -8,9 +8,9 @@
 //
 // Design rules:
 //  - One owner per slot. No layer restates another layer's guardrails. Board
-//    treatment ("the board is a sketch plan, the style ref is the finish" vs
-//    "match the board's finish") lives in the FORMAT slot — owned by the project
-//    recipe/override when present, with a sensible engine default otherwise. The
+//    treatment lives in the FORMAT slot. The engine default treats the board as
+//    a sketch plan and points final finish at locked refs; a project
+//    recipe/override can replace that with a special format contract. The
 //    engine guardrail is universal and makes NO claim about the board's finish, so
 //    it can never contradict the recipe.
 //  - Every segment is self-describing: `source` says where it came from, `editPath`
@@ -64,7 +64,7 @@ export type ComposeStoryboardVideoInput = {
   clipDuration: number;
   clipDirection?: string | null;
   /** Rendered recipe/override text (already slot-filled). When set, it OWNS board
-   *  treatment; when absent, the engine emits a default "match the board" line. */
+   *  treatment; when absent, the engine emits the canonical sketch-plan default. */
   formatIntent?: string | null;
   formatSource?: string | null;
   refLabels?: string[];
@@ -85,9 +85,11 @@ export type ComposeStoryboardVideoInput = {
 const SEGMENT_SEPARATOR = '\n\n';
 
 // Engine default board treatment, used only when no recipe/override declares one.
-// A storyboard with no recipe is the final aesthetic, so match its finish.
+// Canonical Mirage storyboards are black-and-white planning sheets. They carry
+// staging/camera/geography, not final finish. A final-style storyboard workflow
+// can still override this through the format slot.
 const DEFAULT_BOARD_TREATMENT =
-  'The storyboard @image1 carries the target look — match its rendering, palette, line treatment, texture, and finish throughout the clip.';
+  'The storyboard @image1 is a black-and-white sketch planning sheet. Use it for composition, staging, screen direction, geography, and beat timing only. Render the clip in the finish of the locked style, cast, and environment references; do not copy the board linework, monochrome, paper texture, borders, or panel treatment.';
 
 export const composeStoryboardVideoPrompt = (input: ComposeStoryboardVideoInput): VideoPromptComposition => {
   const dur = input.clipDuration;
@@ -96,8 +98,7 @@ export const composeStoryboardVideoPrompt = (input: ComposeStoryboardVideoInput)
   const segments: VideoPromptSegment[] = [];
 
   // 1. Format — board treatment + clip kind. The recipe/override owns it when
-  //    present (it can declare the board a sketch plan and point the finish at
-  //    the style ref); otherwise the engine emits the "match the board" default.
+  //    present; otherwise the engine emits the canonical sketch-plan default.
   const formatIntent = input.formatIntent?.trim();
   if (formatIntent) {
     segments.push({

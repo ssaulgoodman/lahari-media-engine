@@ -9,10 +9,18 @@ export interface StoryboardProviderSpec {
 }
 
 // Order matters: first entry is the default storyboard renderer for new
-// projects. Nano Banana 2 stays default for cost — storyboards are boards
-// (low-stakes drafts), not final frames. Mirage routes all storyboard
-// provider options through Segmind BYOK.
+// projects. GPT Image 2 is the canonical storyboard provider because the
+// default board contract is a black-and-white planning sheet: clear staging,
+// camera logic, and reference translation matter more than cheap final-style
+// rendering. Mirage routes all storyboard provider options through Segmind BYOK.
 export const STORYBOARD_PROVIDERS: StoryboardProviderSpec[] = [
+  {
+    key: 'gpt-image-2',
+    label: 'GPT Image 2',
+    provider: 'segmind',
+    runtimeModel: 'gpt-image-2',
+    note: 'Default. Segmind GPT Image 2. Strong storyboard reasoning, layout, and sketch planning.',
+  },
   {
     key: 'nano-banana-2',
     label: 'Nano Banana 2',
@@ -26,13 +34,6 @@ export const STORYBOARD_PROVIDERS: StoryboardProviderSpec[] = [
     provider: 'segmind',
     runtimeModel: 'nano-banana-pro',
     note: 'Segmind Nano Banana Pro. Strong ref-image conditioning for identity-sensitive boards.',
-  },
-  {
-    key: 'gpt-image-2',
-    label: 'GPT Image 2',
-    provider: 'segmind',
-    runtimeModel: 'gpt-image-2',
-    note: 'Segmind GPT Image 2. Higher-detail storyboard rendering and typography.',
   },
 ];
 

@@ -26,9 +26,9 @@ Useful checks: `npm run build`, `npx tsc --noEmit --pretty false`, `npm run chec
 
 - `GEMINI_API_KEY` - Gemini image/audio/vision and Gemini text-provider option.
 - `ANTHROPIC_API_KEY`
-- `OPENAI_API_KEY` - GPT-5.5 text-provider option, `gpt-image-2` storyboard provider, optional GPT script-writer experiment.
+- `OPENAI_API_KEY` - GPT-5.5 text-provider option, optional GPT script-writer experiment, and direct OpenAI-image fallback where enabled. Mirage's default `gpt-image-2` storyboard provider currently routes through Segmind BYOK.
 - `SCRIPT_WRITER_PROVIDER=openai` (optional) - forces script generation to GPT-5.5 globally. The normal text-provider picker does not route script writing.
-- `SEGMIND_API_KEY` - default video generation and Nano Banana 2 image renderer.
+- `SEGMIND_API_KEY` - default video generation; also Nano Banana and GPT Image 2 image/storyboard rendering through Segmind.
 - `KIE_API_KEY` - optional BYOK alternate video provider (Kie Veo / Gemini Omni). Segmind stays default.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` - Postgres + Storage + song catalog.
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
@@ -93,7 +93,7 @@ Render: `StepRender.tsx` posts the render-authoritative timeline snapshot to `/a
 | Script writer | Claude Opus direct; optional GPT env/body experiment | `claude.ts`, `openai-script.ts` |
 | Image default | Gemini 3 Pro Image ("Nano Banana Pro") with flash fallback | `imagen.ts` |
 | Image alternates | `nano-banana-2`, `gpt-image-2` | `segmind-image.ts`, `openai-image.ts` |
-| Storyboard image | project `storyboard_provider`: `nano-banana-2`, `nano-banana-pro`, `gpt-image-2` | `storyboard.ts` |
+| Storyboard image | project `storyboard_provider`: default `gpt-image-2`; alternates `nano-banana-2`, `nano-banana-pro` | `storyboard.ts` |
 | Video | Segmind Seedance/Veo (default); optional BYOK Kie (`kie-veo3`, `kie-veo3-fast`, `kie-gemini-omni-video`); Vertex fallback for Veo infra/billing only | `video-provider.ts`, `segmind.ts`, `kie-video.ts` |
 
 Text-provider routing does **not** include script writing. `planScenes`, `refineScript`, and `writeShotPrompts` stay on Claude Opus because they rely on extended thinking and validation/retry semantics.
@@ -120,6 +120,7 @@ This is a two-step pipeline.
    - `edit_image` renders from current board + refs + a focused edit instruction; text fields stay untouched.
 
 Storyboard prompt rules:
+- Canonical Mirage storyboards are black-and-white sketch planning sheets: pure white paper, black ink/pencil, optional gray shading only. They are not final production art.
 - Keep prompts short and image-native.
 - Per-panel action descriptions belong inside `storyboard_prompt`.
 - Do not ask for visible panel numbers, captions, arrows, labels, or readable text.
@@ -132,7 +133,7 @@ Storyboard mode ignores the old extracted-frame continuity chain and does not bl
 
 Routing is by provider-owned model spec (`resolveVideoModelSpec`). Segmind stays the default: Segmind model keys go to Segmind first (Veo may fall back to Vertex for infra/billing failures when configured; Seedance never does). `kie-*` model keys route to the Kie BYOK provider instead (no Vertex fallback).
 
-Seedance constraint: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control. Storyboard mode sends no `first_frame_url`; it sends locked storyboard as `@image1` plus style/cast/environment refs.
+Seedance constraint: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control. Storyboard mode sends no `first_frame_url`; it sends locked storyboard as `@image1` plus style/cast/environment refs. Treat storyboard boards as sketch plans for staging/geography/timing; final video finish comes from locked style/cast/environment refs, not from the board's paper/ink treatment.
 
 Keyframe video prompt should stay mostly `motionPrompt` plus actually-attached ref labels. The start frame carries visual state; avoid stuffing scene/mood/cast prose back into the video prompt.
 

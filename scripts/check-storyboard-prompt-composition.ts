@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { composeStoryboardRenderPrompt } from '../server/services/storyboardPromptComposition.js';
+import { composeStoryboardRenderPrompt, storyboardRenderModeFromOverride } from '../server/services/storyboardPromptComposition.js';
 
 const refs = [
   {
@@ -16,12 +16,20 @@ const refs = [
   },
 ];
 
+assert.equal(storyboardRenderModeFromOverride(null), 'hf_music_video', 'default storyboard render mode must be canonical sketch planning');
+assert.equal(
+  storyboardRenderModeFromOverride('Render storyboard in final style from the locked references.'),
+  'default',
+  'final-style storyboard override must opt out of sketch planning',
+);
+
 const defaultComposition = composeStoryboardRenderPrompt({
-  renderMode: 'default',
+  renderMode: 'hf_music_video',
   prompt: 'A 2x2 storyboard sheet showing a pilgrim entering the courtyard, then turning toward the shrine.',
   refMeta: refs,
   isEditImage: false,
   params: { model: 'gpt-image-2', storyboardProvider: 'gpt-image-2' },
+  renderContractSource: 'engine default canonical storyboard render contract',
 }).composition;
 
 assert.equal(
@@ -36,18 +44,23 @@ for (const segment of defaultComposition.segments) {
 }
 
 const defaultSlots = defaultComposition.segments.map((segment) => segment.slot);
-assert.deepEqual(defaultSlots, ['ref_binding_contract', 'board_prompt']);
+assert.deepEqual(defaultSlots, ['workflow_render_contract', 'ref_binding_contract', 'board_prompt']);
+assert.equal(defaultComposition.segments.find((segment) => segment.slot === 'workflow_render_contract')?.source, 'engine default canonical storyboard render contract');
 assert.equal(defaultComposition.segments.find((segment) => segment.slot === 'board_prompt')?.source, 'shots.storyboard_prompt');
 assert.equal(defaultComposition.images.length, 2);
 assert.equal(defaultComposition.images[0].ref, 'Image 1');
 assert.equal(defaultComposition.images[0].assetId, 'style_asset');
 assert.equal(defaultComposition.params.model, 'gpt-image-2');
+assert.match(defaultComposition.text, /STRICTLY BLACK AND WHITE/);
+assert.match(defaultComposition.segments.find((segment) => segment.slot === 'ref_binding_contract')?.text || '', /Do not carry reference colors into the storyboard/);
 
 const hfComposition = composeStoryboardRenderPrompt({
   renderMode: 'hf_music_video',
   prompt: 'A pure planning board of the courtyard threshold moment.',
   refMeta: refs,
   isEditImage: false,
+  renderContractSource: 'project storyboard workflow/override',
+  renderContractEditPath: 'apply_project_workflow | apply_project_prompt_override',
 }).composition;
 
 assert.deepEqual(

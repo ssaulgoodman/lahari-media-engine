@@ -186,7 +186,7 @@ router.post('/:queueId/start', async (req, res) => {
       // planner generates one storyboard-controlled shot per scene
       // segment instead of fragmenting into short cuts.
       image_model: 'gemini-3-pro',
-      storyboard_provider: 'nano-banana-2',
+      storyboard_provider: 'gpt-image-2',
       video_model: 'seedance-2.0-fast',
       target_duration: 15,
       user_id: req.userId,

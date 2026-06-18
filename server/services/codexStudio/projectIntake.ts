@@ -81,7 +81,7 @@ export const createProjectForDirector = async (userId: string, opts: {
     meaning: directorBrief,
     musical_structure: JSON.stringify([]),
     image_model: preset.defaults.imageModel,
-    storyboard_provider: preset.defaults.imageModel,
+    storyboard_provider: preset.defaults.storyboardProvider,
     video_model: preset.defaults.videoModel,
     aspect_ratio: preset.defaults.aspectRatio,
     target_duration: targetShotDuration,

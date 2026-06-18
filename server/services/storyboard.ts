@@ -590,6 +590,7 @@ const generateStoryboardVersionUnlocked = async (opts: GenerateStoryboardVersion
     : '';
   const projectStoryboardOverride = await getProjectPromptOverride(opts.projectId, 'storyboard');
   const storyboardRenderMode = storyboardRenderModeFromOverride(projectStoryboardOverride);
+  const storyboardRenderHasOverride = Boolean(String(projectStoryboardOverride || '').trim());
   const isEditImage = Boolean(opts.artistNote?.trim() && refineMode === 'edit_image');
   // Edit mode = "this storyboard image is good, change this one thing."
   // The previous image carries the visual state; resend neither the saved
@@ -617,6 +618,12 @@ ${artistRefNote}`
     prompt,
     refMeta,
     isEditImage,
+    renderContractSource: storyboardRenderHasOverride
+      ? 'project storyboard workflow/override'
+      : 'engine default canonical storyboard render contract',
+    renderContractEditPath: storyboardRenderHasOverride
+      ? 'apply_project_workflow | apply_project_prompt_override'
+      : 'apply_project_prompt_override with a final-style storyboard override',
     params: {
       model: providerSpec.runtimeModel,
       provider: providerSpec.provider,

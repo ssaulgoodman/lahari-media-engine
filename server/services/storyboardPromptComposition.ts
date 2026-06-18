@@ -39,12 +39,19 @@ const SEGMENT_SEPARATOR = '\n\n';
 export const storyboardRenderModeFromOverride = (projectStoryboardOverride: string | null): StoryboardRenderMode => {
   const body = String(projectStoryboardOverride || '').toLowerCase();
   if (
+    body.includes('final-style storyboard')
+    || body.includes('render storyboard in final style')
+    || body.includes('same-style storyboard')
+  ) {
+    return 'default';
+  }
+  if (
     body.includes('hf music storyboard recipe')
     || (body.includes('strictly black and white') && body.includes('pure white paper'))
   ) {
     return 'hf_music_video';
   }
-  return 'default';
+  return 'hf_music_video';
 };
 
 const buildHfStoryboardRenderContract = (isEditImage: boolean): string => [
@@ -107,6 +114,8 @@ export const composeStoryboardRenderPrompt = (opts: {
   refMeta: StoryboardRefMeta[];
   isEditImage: boolean;
   params?: Record<string, unknown>;
+  renderContractSource?: string;
+  renderContractEditPath?: string;
 }): {
   renderPrompt: string;
   refBindingContract: string;
@@ -122,8 +131,8 @@ export const composeStoryboardRenderPrompt = (opts: {
       slot: 'workflow_render_contract',
       label: 'Workflow render contract',
       text: renderContract,
-      source: 'project storyboard workflow/override',
-      editPath: 'apply_project_workflow | apply_project_prompt_override',
+      source: opts.renderContractSource || 'engine default canonical storyboard render contract',
+      editPath: opts.renderContractEditPath || 'apply_project_prompt_override with a final-style storyboard override',
       included: true,
     });
   }

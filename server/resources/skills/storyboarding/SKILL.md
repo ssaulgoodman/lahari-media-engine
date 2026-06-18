@@ -15,19 +15,19 @@ Read the shot direction, assigned cast/environment, locked refs, and adjacent sh
 
 ## Prompt Pattern
 
-1. **Layout:** choose a 2×2, 2×3, or 3×3 grid. Use 2×2 (4 panels) for most shots, 2×3 (6 panels) for a longer beat, and 3×3 (9 panels) only for dense action. Use 16:9 panels, thin borders, and a neutral background. Panels read left-to-right, top-to-bottom.
+1. **Layout:** choose a 2×2, 2×3, or 3×3 grid. Use 2×2 (4 panels) for most shots, 2×3 (6 panels) for a longer beat, and 3×3 (9 panels) only for dense action. Use 16:9 panels, thin borders, generous gaps, and a pure white paper background. Panels read left-to-right, top-to-bottom.
 2. **Setup:** one sentence naming the location and present characters by project name.
 3. **Panels:** one clear action moment per panel. Format: `Panel 1: <framing/staging> — <visible action>`.
 4. **Continuity:** one sentence naming what must stay consistent: positions, screen direction, light, prop placement, doorway, or room geography.
 5. **No text:** end with no captions, numbers, labels, arrows, speech bubbles, subtitles, readable text, logos, or watermarks.
 
-Style wording should come from the locked style reference. Use at most one short style phrase when it helps the image model read the board; do not invent a separate genre, palette, lighting scheme, or finish that could fight the reference.
+Canonical Mirage storyboards are black-and-white sketch planning sheets, not final production art. Ask for strict black ink/pencil linework on pure white paper, optional gray shading only, and no color or final-render texture. Locked references still matter, but the renderer converts them into sketch guidance for identity, geography, and composition. Final video style comes later from the locked style/cast/environment refs.
 
 Keep the prompt under ~220 words. Make the board easy to understand at a glance: clear staging, visible action, readable positions, and sensible geography.
 
 Example:
 
-> A 2×2 grid of four 16:9 storyboard panels, thin borders, read left-to-right then top-to-bottom.
+> A 2×2 grid of four 16:9 storyboard panels on pure white paper, thin black borders, read left-to-right then top-to-bottom. Strictly black-and-white pen-and-pencil sketch style with optional gray shading only.
 > Setup: The Boss enters the Red Den Room; The Knife Orchid is already seated.
 > Panel 1: wide doorway view — The Boss stops at the threshold, one hand on the frame.
 > Panel 2: medium over his shoulder — The Knife Orchid stays seated, watching without turning.
@@ -44,9 +44,9 @@ The cut plan guides video motion after the board exists. Use the same beats, one
 
 It can be empty when the board order is enough.
 
-## HF Music Planning
+## HF / Sketch Planning
 
-When the artist asks for HF/Supercomputer-style music-video planning, do not make that the global storyboard style. Use `run_action(list_workflows)` and `run_action(apply_project_workflow, { name: "hf_music_video" })` first. That recipe makes storyboard boards black-and-white sketch planning sheets: pure white paper, ink/pencil, no color, no labels, no captions. Panels should map to song beats, lyric sections, camera moments, or choreography rather than final-render beauty frames. The final video style still comes from locked style/cast/environment refs. Once the workflow is active, Mirage also enforces the HF sketch-board contract during storyboard render/refine, so regenerate bad color boards instead of hand-pasting the recipe into each shot.
+HF/Supercomputer-style sketch planning is now the canonical Mirage storyboard technique. The default storyboard renderer enforces black-and-white sketch boards, and GPT Image 2 is the default storyboard provider. For music-led projects, use `run_action(list_workflows)` and `run_action(apply_project_workflow, { name: "hf_music_video" })` when the artist wants the full HF music-video workflow: it adds music-section/video recipe defaults on top of the same sketch-board base. If the artist explicitly wants storyboards rendered in the same final style as the video, treat that as a deliberate override, not the default.
 
 ## Check The Board
 
@@ -68,7 +68,7 @@ Before locking, check whether the board actually stages the shot:
 6. **Native or artist image is better** → upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
 7. **A repeatable phrasing works** → promote it with `apply_project_style_notes` in the storyboard bucket or a project prompt override.
 
-Switch storyboard provider only after the prompt and attached context are sound and the same failure repeats.
+Keep `gpt-image-2` as the storyboard provider unless the artist explicitly asks to test another model or GPT Image 2 fails repeatedly with a clear provider-specific issue.
 
 ## Avoid
 

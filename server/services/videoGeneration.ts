@@ -506,10 +506,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
     }
     const keyframePromptHasDialogue = promptAlreadyContainsDialogue(baseKeyframePromptText, dialogueLines);
     const recipeNativeAudioMode = normalizeNativeAudioMode(projectVideoRecipeMeta?.video?.nativeAudioMode);
-    const videoRecipeName = typeof projectVideoRecipeMeta?.name === 'string' ? projectVideoRecipeMeta.name : '';
-    const storyboardVideoDefaultInclude = videoRecipeName === 'hf_music_video'
-      ? { beat: false as const }
-      : undefined;
+    const storyboardVideoDefaultInclude = { beat: false as const };
     const persistedVideoPromptSlots = parsePersistedVideoPromptSlots(shot.video_prompt_slots);
     const persistedVideoPromptInclude = videoPromptSlotsToInclude(persistedVideoPromptSlots);
     const callVideoPromptInclude = videoPromptSlotsToInclude(opts.contextOverrides);

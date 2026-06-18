@@ -41,11 +41,12 @@ assert.ok(guardrail, 'guardrail segment present');
 assert.doesNotMatch(guardrail!.text, /storyboard @image1/, 'guardrail must not reference the board (no board-finish claim)');
 assert.doesNotMatch(guardrail!.text, /match.*finish/i, 'guardrail must not claim what finish to match');
 
-// 6. No recipe → engine default format owns board treatment ("match the board").
+// 6. No recipe → engine default format owns sketch-plan board treatment.
 const fmtDefault = c.segments.find((s) => s.slot === 'format');
 assert.ok(fmtDefault, 'a format segment is always present (recipe or engine default)');
 assert.match(fmtDefault!.source, /engine default/);
-assert.match(fmtDefault!.text, /carries the target look/, 'engine default = match the board');
+assert.match(fmtDefault!.text, /black-and-white sketch planning sheet/, 'engine default = sketch planning board');
+assert.match(fmtDefault!.text, /do not copy the board linework/i);
 
 // 7. Recipe present → the recipe owns format/board treatment, attributed to it.
 const withRecipe = composeStoryboardVideoPrompt({
@@ -58,7 +59,7 @@ assert.equal(fmt!.source, 'project video recipe: hf_music_video');
 assert.match(fmt!.editPath, /apply_project_workflow|apply_project_prompt_override/);
 assert.ok(withRecipe.text.startsWith('HF MUSIC VIDEO FORMAT'), 'recipe format intent leads the composed prompt');
 // And the engine never adds a competing "match the board's finish" claim.
-assert.doesNotMatch(withRecipe.segments.find((s) => s.slot === 'guardrail')!.text, /carries the target look/);
+assert.doesNotMatch(withRecipe.segments.find((s) => s.slot === 'guardrail')!.text, /black-and-white sketch planning sheet/);
 
 // 8. Cut-plan provenance flips with the source.
 const derived = composeStoryboardVideoPrompt({ ...base, cutPlanFromShot: false });

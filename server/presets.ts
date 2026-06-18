@@ -67,6 +67,7 @@ export type PipelinePreset = {
   };
   defaults: {
     imageModel: string;
+    storyboardProvider: string;
     videoModel: string;
     aspectRatio: string;
     pacing: number;
@@ -167,6 +168,7 @@ Each direction should sit in a clearly different production space. Avoid restati
     },
     defaults: {
       imageModel: 'nano-banana-2',
+      storyboardProvider: 'gpt-image-2',
       videoModel: 'seedance-2.0-fast',
       aspectRatio: '16:9',
       pacing: 8,
@@ -234,6 +236,7 @@ Each direction must be distinct in palette, line treatment, rendering, lighting,
     },
     defaults: {
       imageModel: 'nano-banana-2',
+      storyboardProvider: 'gpt-image-2',
       videoModel: 'seedance-2.0-fast',
       aspectRatio: '16:9',
       pacing: 6,

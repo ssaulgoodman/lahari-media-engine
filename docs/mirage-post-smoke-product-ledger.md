@@ -26,11 +26,11 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
   Next reads should be shot-scoped and summary-first, with exact payloads available on demand.
 - The render timeline works, but it is still basic. It needs clearer clip/audio controls,
   canonical-vs-local state, render eligibility, and storage/preview policy.
-- The HF sketch-board technique is a winning music-video storyboard path. It should be the
-  canonical board-planning mode for HF/music-led projects, with normal rendered boards still
-  available for other workflows.
+- The HF sketch-board technique is now the canonical storyboard planning path: black-and-white
+  GPT Image 2 sketch boards by default, with final-style/rendered boards available only as a
+  deliberate override.
 - The best HF video payload spine is: workflow format + locked storyboard + explicit refs +
-  cut plan. Shot-direction Beat text should be excluded by default for HF music-video video
+  cut plan. Shot-direction Beat text should be excluded by default for storyboard-video
   generation; artists/agents can opt it back in when it is actually useful.
 - The larger product goal is an agent that gets smarter, faster, and more creative from each
   production run. Successful prompt moves, failed model calls, ref tricks, storyboard repairs,
@@ -200,9 +200,9 @@ shots.
 
 Work:
 
-- Make HF sketch-board generation the canonical storyboard render contract for HF/music-led
-  projects: pure white paper, black ink/pencil, no color, no labels, refs translated into
-  sketch guidance rather than copied as final art.
+- Make HF sketch-board generation the canonical storyboard render contract: pure white paper,
+  black ink/pencil, no color, no labels, refs translated into sketch guidance rather than copied
+  as final art.
 - Map every storyboard prompt segment: format, style, cast refs, env refs, prior board,
   continuity, guardrails, final image prompt.
 - Remove duplicate/conflicting wrapper language.

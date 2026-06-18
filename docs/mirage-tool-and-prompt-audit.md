@@ -378,12 +378,12 @@ Renders one reusable environment reference.
 
 Renders the storyboard image for one shot from the saved storyboard prompt.
 
-When the active project storyboard override is the `hf_music_video` workflow recipe, the render path prepends the HF black-and-white sketch-board contract to both fresh generation and edit-image refine. This is enforced in the paid renderer prompt, not just in the planner text, so Studio and MCP calls share the same canonical behavior.
+The render path prepends the HF-style black-and-white sketch-board contract to both fresh generation and edit-image refine by default. This is enforced in the paid renderer prompt, not just in the planner text, so Studio and MCP calls share the same canonical behavior. Final-style storyboards are an explicit override path, not the everyday default.
 
 - Triggered by: `generate_storyboard`, `bulk_generate_storyboards`
-- Model: `project.storyboard_provider` (nano-banana-2 / nano-banana-pro / gpt-image-2)
+- Model: `project.storyboard_provider` (default `gpt-image-2`; alternates `nano-banana-2` / `nano-banana-pro`)
 - Inputs: storyboardPrompt (saved), locked style/cast/env refs, optional artist edit instruction in refine mode
-- Contract: image-only render. Sends saved `storyboardPrompt` text plus attached refs to the storyboard image provider. Cut plan is NOT sent — that's for the downstream Seedance video step.
+- Contract: image-only render. Sends the canonical black-and-white sketch-board contract, saved `storyboardPrompt` text, and attached refs to the storyboard image provider. Cut plan is NOT sent — that's for the downstream Seedance video step.
 - Output: storyboard image (2×2, 2×3, or 3×3 grid; 4, 6, or 9 panels)
 
 #### shot-video-assembly `[agent]`

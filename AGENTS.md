@@ -116,9 +116,9 @@ Useful checks in this repo: `npm run build`, `npx tsc --noEmit --pretty false`, 
 
 - `GEMINI_API_KEY` - Gemini 3 Pro Image (`imagen.ts`), Gemini audio/vision (`gemini.ts`), and Gemini text when the artist picks Gemini in the text-provider picker.
 - `ANTHROPIC_API_KEY`
-- `OPENAI_API_KEY` - GPT-5.5 text-provider option, `gpt-image-2` storyboard/image provider, and optional GPT script-writer experiment.
+- `OPENAI_API_KEY` - GPT-5.5 text-provider option, optional GPT script-writer experiment, and direct OpenAI-image fallback where enabled. Mirage's default `gpt-image-2` storyboard provider currently routes through Segmind BYOK.
 - `SCRIPT_WRITER_PROVIDER=openai` (optional) - forces `generate-script` to GPT-5.5 globally. Script writing is otherwise Claude Opus and is intentionally not routed through the text-provider picker.
-- `SEGMIND_API_KEY` - default video generation; also Nano Banana 2 image renderer.
+- `SEGMIND_API_KEY` - default video generation; also Nano Banana and GPT Image 2 image/storyboard rendering through Segmind.
 - `KIE_API_KEY` - optional BYOK alternate video provider (Kie Veo / Gemini Omni). Segmind stays default.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` - Postgres + Storage + song catalog.
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
@@ -294,7 +294,7 @@ Generate router modules:
 | Script writer | Claude Opus 4.7 direct; optional GPT via env/body experiment | `claude.ts`, `openai-script.ts` |
 | Image gen default | Gemini 3 Pro Image ("Nano Banana Pro") with flash fallback | `imagen.ts` |
 | Image alternates | `nano-banana-2`, `gpt-image-2` | `segmind-image.ts`, `openai-image.ts` |
-| Storyboard image | Project `storyboard_provider`: `nano-banana-2`, `nano-banana-pro`, `gpt-image-2` | `storyboard.ts` |
+| Storyboard image | Project `storyboard_provider`: default `gpt-image-2`; alternates `nano-banana-2`, `nano-banana-pro` | `storyboard.ts` |
 | Video | Segmind Seedance/Veo (default); optional BYOK Kie (`kie-veo3`, `kie-veo3-fast`, `kie-gemini-omni-video`) | `segmind.ts`, `video-provider.ts`, `kie-video.ts` |
 
 ### Text Provider Routing
@@ -324,6 +324,7 @@ This is now a two-step pipeline, matching frame generation shape.
    - `edit_image` uses current board + refs + artist note to render a new board; text fields stay untouched.
 
 Prompt rules:
+- Canonical Mirage storyboards are black-and-white sketch planning sheets: pure white paper, black ink/pencil, optional gray shading only. They are not final production art.
 - Keep storyboard prompts short and image-native. Per-panel actions belong inside `storyboard_prompt`; long "contract" bullet lists, animation rules, and quality boilerplate made outputs worse.
 - Board panels are ordered left-to-right, then top-to-bottom.
 - Do not ask for visible panel numbers, captions, arrows, labels, or readable text. Seedance can copy those into video.
@@ -339,7 +340,7 @@ Continuity:
 
 Routing is by provider-owned model spec (`resolveVideoModelSpec`); Segmind stays the default. Segmind model keys go to Segmind first (Veo may fall back to Vertex when Segmind fails for infra/billing and Vertex is configured; Seedance never does). `kie-*` model keys route to the Kie BYOK provider instead (no Vertex fallback).
 
-Seedance constraint: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control. Storyboard mode sends no `first_frame_url`; it sends locked storyboard as `@image1` plus style/cast/environment refs.
+Seedance constraint: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control. Storyboard mode sends no `first_frame_url`; it sends locked storyboard as `@image1` plus style/cast/environment refs. Treat storyboard boards as sketch plans for staging/geography/timing; final video finish comes from locked style/cast/environment refs, not from the board's paper/ink treatment.
 
 Keyframe video prompt is mostly `motionPrompt` plus actually-attached ref labels. Do not stuff scene/mood/cast prose into the video prompt; the start frame already carries the visual state.
 
