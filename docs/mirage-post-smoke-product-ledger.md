@@ -37,6 +37,9 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
   and render decisions should become reusable taste/workflow memory instead of dying in chat.
 - Studio needs obvious manual override controls for power users: upload this storyboard exactly
   as-is, lock it, use it downstream. No ceremony.
+- Mirage state should become self-explaining at the shot level. A fresh agent should not need
+  chat archaeology to know the active workflow recipe, storyboard prompt provenance, payload
+  slots, render/video state, and exact edit actions.
 - Studio interaction polish is now part of the product loop: expanded prompt panels must not
   create huge blank scroll regions, and Lock/Generate buttons need immediate, elegant feedback
   instead of delayed/janky state changes.
@@ -217,6 +220,46 @@ storyboard render and video payloads, and MCP/Web reads use the generic
 **Read-side rule:** `describe_prompt({ kind, projectId, shotId?, entityId? })` is the canonical
 inspector. `describe_video_prompt` remains only as a compatibility alias; do not add a family of
 `describe_*_prompt` tools.
+
+### P3c — Self-Explaining Shot Working Set `[ready now]`
+
+**Goal:** A fresh agent or human can open one shot and immediately understand what controls the
+next storyboard/video generation.
+
+Problem found in smoke: even after payload inspection landed, agents still reconstructed too
+much from scattered state: which workflow recipe is active, whether HF was applied before or
+after storyboard prompts were written, whether Beat is excluded by recipe/shot/default/one-off,
+what payload was last sent, and which exact action changes each piece.
+
+Build one shot-level working set that powers both Studio and MCP:
+
+- effective workflow/project recipe and where it comes from: workflow default, project override,
+  shot override, or one-off generation call
+- saved storyboard prompt provenance: written under which recipe/version, whether it predates the
+  current recipe, whether the active board was generated/refined/imported under matching prompt
+  text
+- storyboard render payload summary: latest prompt composition, refs, provider params, active
+  board/version id, and edit paths
+- video payload summary: latest prompt composition, saved `videoPromptSlots`, one-off
+  `contextOverrides` from the last attempt, attached refs, provider params, and edit paths
+- generation eligibility: storyboard/keyframe mode, required assets, stale flags, locked state,
+  provider/model, estimated spend, and known risk state
+- recommended next actions: rewrite prompts under current recipe, save slot default, dry-run
+  video, generate storyboard, import board as-is, switch shot workflow mode, repair refs, or open
+  the relevant payload inspector
+
+Surfaces:
+
+- MCP: `get_shot_context(projectId, shotId)` or equivalent lean read, summary-first with exact
+  prompt bodies delegated to `describe_prompt`
+- Studio: quiet "Shot state" / "Recipe & payload" panel with labels for included/excluded
+  reasons: workflow default, project default, shot default, one-off override, stale, or imported
+- notebook/local sync: optional compact audit artifact, useful for debugging and handoff, not a
+  blocker for authoring
+
+**Done when:** a new director session can open S3.1 and know: HF is applied, this storyboard
+prompt predates HF, Beat is excluded by shot default, Cut Plan is included by default, the last
+video used these refs, and the next correct action is to rewrite the storyboard prompt under HF.
 
 ### P3b — Upload Storyboard As-Is `[landed locally]`
 
@@ -405,13 +448,14 @@ Recommended order:
 3. P2 durable override parity for the same surface.
 4. P2b per-shot workflow mode overrides.
 5. P3 storyboard composer audit.
-6. P4 shot-scoped agent reads and summary-first dry-run mode.
-7. P5b async job watch discipline.
-8. P3b upload storyboard as-is.
-9. P5 local audit artifacts, P5c isolated image fix workers, and P5d agent learning loop.
-10. P7 storage/render ops fix.
-11. P6 timeline/sidebar/playback overhaul and then timeline agent actions.
-12. P6b Premiere Pro bridge after timeline/export semantics are stable.
+6. P3c self-explaining shot working set.
+7. P4 shot-scoped agent reads and summary-first dry-run mode.
+8. P5b async job watch discipline.
+9. P3b upload storyboard as-is.
+10. P5 local audit artifacts, P5c isolated image fix workers, and P5d agent learning loop.
+11. P7 storage/render ops fix.
+12. P6 timeline/sidebar/playback overhaul and then timeline agent actions.
+13. P6b Premiere Pro bridge after timeline/export semantics are stable.
 
 P1/P2 are the most valuable first slice because they turn the successful smoke maneuver into a
 repeatable human/agent product surface.
@@ -441,3 +485,7 @@ repeatable human/agent product surface.
 - 2026-06-18 · P1b first UI polish landed locally · — · Autosizing prompt textareas now refit on
   external writes/layout changes, top-bar activity uses a refined status pill, and Studio shot
   header / storyboard panel actions get immediate spinner feedback with steadier button widths.
+- 2026-06-18 · self-explaining shot state captured · — · Added P3c: one shot-level working set
+  should reveal workflow recipe, storyboard prompt provenance, storyboard/video payload summaries,
+  saved slot defaults, generation eligibility, and exact edit actions so fresh agents can operate
+  without chat archaeology.
