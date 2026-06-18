@@ -140,6 +140,13 @@ Work:
 - Persist attempt anatomy so the latest storyboard prompt can be inspected after generation.
 - Add dry-run/describe support once the composer exists.
 
+**Backend slice landed locally:** storyboard image rendering now uses a provenance-returning
+composer. Generated/refined storyboard versions persist `metadata.promptComposition` with exact
+sent text, segment sources/edit paths, attached images, provider params, and HF/default render
+mode. Storyboard history exposes this object. Remaining work is product surface: Studio payload
+UI and a generic `describe_prompt({ kind })` read action when we expose composed reads beyond
+video.
+
 **Read-side rule:** `describe_video_prompt` is only the prototype. When storyboard becomes the
 second composed surface, design `describe_prompt({ kind, projectId, shotId?, entityId? })`
 instead of adding a family of `describe_*_prompt` tools.
@@ -342,3 +349,6 @@ repeatable human/agent product surface.
 - 2026-06-18 · P3b landed locally · — · Studio can upload a native storyboard image as-is for a
   shot. The upload becomes the active storyboard version without a provider call and stays
   unlocked until the artist explicitly locks it.
+- 2026-06-18 · P3 backend composer landed locally · — · Storyboard image render prompts now
+  persist a provenance-annotated composition object on storyboard version metadata and expose it
+  through storyboard history.

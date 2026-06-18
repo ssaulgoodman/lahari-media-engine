@@ -729,6 +729,8 @@ router.get('/:id/shots/:shotId/storyboard-history', async (req, res) => {
         imageModel: row.image_model || undefined,
         cutPlanText: metadata.cutPlanText || undefined,
         continuityNotes: metadata.continuityNotes || undefined,
+        promptComposition: metadata.promptComposition || undefined,
+        storyboardRenderMode: metadata.storyboardRenderMode || undefined,
         locked: !!row.locked,
         createdAt: row.created_at,
       };

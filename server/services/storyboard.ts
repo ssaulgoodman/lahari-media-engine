@@ -20,6 +20,7 @@ import {
   type ContextOverrides,
 } from './contextOverrides.js';
 import { generationKey, withInFlightGeneration } from './inFlightGeneration.js';
+import { composeStoryboardRenderPrompt, storyboardRenderModeFromOverride } from './storyboardPromptComposition.js';
 
 type StoryboardRefMeta = {
   label: string;
@@ -160,91 +161,6 @@ const estimateStoryboardCost = (imageCount: number): number => {
 const estimateStoryboardPlanCost = (): number => {
   const configured = Number(process.env.OPENAI_STORYBOARD_PLAN_COST_ESTIMATE || 0);
   return configured > 0 ? configured : 0.02;
-};
-
-type StoryboardRenderMode = 'default' | 'hf_music_video';
-
-const storyboardRenderModeFromOverride = (projectStoryboardOverride: string | null): StoryboardRenderMode => {
-  const body = String(projectStoryboardOverride || '').toLowerCase();
-  if (
-    body.includes('hf music storyboard recipe')
-    || (body.includes('strictly black and white') && body.includes('pure white paper'))
-  ) {
-    return 'hf_music_video';
-  }
-  return 'default';
-};
-
-const buildHfStoryboardRenderContract = (isEditImage: boolean): string => [
-  'HF STORYBOARD RENDER CONTRACT',
-  'Render a planning storyboard sheet, not final production art.',
-  'Use a 2x2 or 2x3 grid of 16:9 panels on pure white paper (#FFFFFF), with thin black panel borders and generous gaps.',
-  'STRICTLY BLACK AND WHITE: bold black ink linework with optional gray pencil shading only. No color, no cream tint, no sepia, no watercolor, no accent colors, no colored wardrobe, skin, props, headers, or footers.',
-  'Hand-drawn pen-and-pencil sketch style. Do not render photorealism, final color grading, cinematic lighting, or final material texture.',
-  'Reference images are planning guides for identity, pose, setting layout, composition, geography, props, and shot intent. Strip color and final-render texture from every reference image.',
-  'Do not paste, trace, or reproduce reference images directly. Convert all references into the same black-and-white sketch planning language.',
-  'Do not render panel numbers, captions, subtitles, arrows, speech bubbles, readable headers, watermarks, or footer text.',
-  isEditImage
-    ? 'If the previous storyboard image is colored or final-rendered, do not preserve its color, palette, photoreal finish, or texture. Preserve only its panel layout, subject positions, geography, and continuity while converting the result into the HF black-and-white sketch-board style.'
-    : '',
-].filter(Boolean).join('\n');
-
-const buildStoryboardRefBindingContract = (
-  refMeta: StoryboardRefMeta[],
-  opts: { renderMode?: StoryboardRenderMode } = {},
-): string => {
-  if (!refMeta.length) return '';
-  const hfSketchPlanning = opts.renderMode === 'hf_music_video';
-  const lines = refMeta.map((ref, index) => {
-    const slot = `Image ${index + 1}`;
-    if (ref.excludableKey === 'style') {
-      if (hfSketchPlanning) {
-        return `- ${slot}: ${ref.label}. Use for visual grammar, identity discipline, composition taste, and medium cues only; strip all color, palette, final lighting, and final-render texture into black-and-white sketch form.`;
-      }
-      return `- ${slot}: ${ref.label}. Use for overall medium, palette, lighting, line quality, and finish only; do not copy its subject.`;
-    }
-    if (ref.excludableKey?.startsWith('cast:')) {
-      if (hfSketchPlanning) {
-        return `- ${slot}: ${ref.label}. When the storyboard names this character, bind face structure, body shape, costume silhouette, pose language, and identity; strip all color and final-render texture.`;
-      }
-      return `- ${slot}: ${ref.label}. When the storyboard names this character, bind the appearance and outfit to this exact reference.`;
-    }
-    if (ref.excludableKey?.startsWith('env:')) {
-      if (hfSketchPlanning) {
-        return `- ${slot}: ${ref.label}. When the storyboard names this location, bind geography, architecture, layout, materials, props, and spatial relationships; strip all color and final-render texture.`;
-      }
-      return `- ${slot}: ${ref.label}. When the storyboard names this location, bind layout, materials, color, and props to this exact reference.`;
-    }
-    if (ref.excludableKey === 'prev_storyboard') {
-      return `- ${slot}: ${ref.label}. Use only for continuity from the previous shot.`;
-    }
-    return `- ${slot}: ${ref.label}. Use only for the role named here.`;
-  });
-  return [
-    'REFERENCE BINDING CONTRACT',
-    ...lines,
-    hfSketchPlanning
-      ? 'Do not swap identities between reference images. Do not invent alternate outfits, faces, rooms, or props when the matching reference image is present. Do not carry reference colors into the storyboard.'
-      : 'Do not swap identities between reference images. Do not invent alternate outfits, faces, rooms, or props when the matching reference image is present.',
-  ].join('\n');
-};
-
-const composeStoryboardRenderPrompt = (opts: {
-  renderMode: StoryboardRenderMode;
-  prompt: string;
-  refMeta: StoryboardRefMeta[];
-  isEditImage: boolean;
-}): { renderPrompt: string; refBindingContract: string; renderContract: string } => {
-  const renderContract = opts.renderMode === 'hf_music_video'
-    ? buildHfStoryboardRenderContract(opts.isEditImage)
-    : '';
-  const refBindingContract = buildStoryboardRefBindingContract(opts.refMeta, { renderMode: opts.renderMode });
-  const renderPrompt = [
-    renderContract,
-    refBindingContract,
-    opts.prompt,
-  ].filter((part) => part.trim()).join('\n\n');
-  return { renderPrompt, refBindingContract, renderContract };
 };
 
 const extractJsonObject = (text: string): any => {
@@ -691,19 +607,29 @@ Edit instruction:
 ${opts.artistNote.trim()}
 ${artistRefNote}`
     : promptBase;
-  const { renderPrompt, refBindingContract, renderContract } = composeStoryboardRenderPrompt({
+  await updateRows('shots', { id: opts.shotId }, { storyboard_status: 'loading' });
+  const t0 = Date.now();
+  const preferences = await getProjectPreferencesState(ctx.project as any);
+  const storyboardProviderKey = opts.modelOverride?.storyboardProvider || preferences.preferences.storyboardProvider;
+  const providerSpec = getStoryboardProvider(storyboardProviderKey);
+  const { renderPrompt, refBindingContract, renderContract, composition } = composeStoryboardRenderPrompt({
     renderMode: storyboardRenderMode,
     prompt,
     refMeta,
     isEditImage,
+    params: {
+      model: providerSpec.runtimeModel,
+      provider: providerSpec.provider,
+      storyboardProvider: storyboardProviderKey,
+      aspectRatio: ctx.project.aspect_ratio || '16:9',
+      mode: storyboardRenderMode,
+      editImage: isEditImage,
+      contextOverrides: contextTrace,
+    },
   });
 
-  await updateRows('shots', { id: opts.shotId }, { storyboard_status: 'loading' });
-  const t0 = Date.now();
-  const preferences = await getProjectPreferencesState(ctx.project as any);
-
   try {
-    const rendered = await renderWithProvider(opts.modelOverride?.storyboardProvider || preferences.preferences.storyboardProvider, renderPrompt, ctx.project.aspect_ratio || '16:9', refs);
+    const rendered = await renderWithProvider(storyboardProviderKey, renderPrompt, ctx.project.aspect_ratio || '16:9', refs);
     const assetId = uuidv4();
     const versionId = uuidv4();
     const durationMs = Date.now() - t0;
@@ -722,6 +648,7 @@ ${artistRefNote}`
         size: rendered.size,
         contextOverrides: contextTrace,
         storyboardRenderMode,
+        promptComposition: composition,
       }),
     });
 
@@ -752,6 +679,7 @@ ${artistRefNote}`
         rendererModel: rendered.model,
         imageRenderOnly: true,
         contextOverrides: contextTrace,
+        promptComposition: composition,
       },
       locked: false,
     });

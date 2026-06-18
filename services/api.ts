@@ -627,6 +627,8 @@ export type StoryboardVersionEntry = {
   imageModel?: string;
   cutPlanText?: string;
   continuityNotes?: string;
+  promptComposition?: unknown;
+  storyboardRenderMode?: string;
   locked: boolean;
   createdAt: string;
 };

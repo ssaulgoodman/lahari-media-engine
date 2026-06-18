@@ -477,16 +477,21 @@ When the active project storyboard override is the `hf_music_video` recipe, the 
 | `context_trace` | action input + shot exclusions | included/excluded/replaced ref keys | `contextOverrides` |
 | `provider/model` | project prefs or per-call model override | `preferences.storyboardProvider` / `modelOverride.storyboardProvider` | `apply_project_preferences` / action input |
 
-The renderer already persists strong evidence: `assets.prompt`, `storyboard_versions.prompt`, `storyboard_versions.refs`, and `storyboard_versions.metadata.renderPrompt/refBindingContract/contextOverrides`. X-Ray logs the same render prompt + reference inputs. What it does **not** have yet is a provenance-annotated composition object like video.
+The renderer now persists a provenance-annotated composition object on
+`storyboard_versions.metadata.promptComposition` and mirrors it through storyboard history. The
+composition has `segments`, `images`, `params`, and exact `text` sent to the image model. This is
+the storyboard-render equivalent of video prompt composition: every text segment carries a
+source and edit path, so a bad board can be diagnosed without reconstructing the payload from
+logs.
 
 ### Next Composer Slice
 
 Storyboard generation should get the same auditability as storyboard video, but as a separate slice:
 
 1. Add `composeStoryboardPlannerPrompt` for the planner surface with segments: `core_task`, `source_brief`, `current_board`, `current_cut_plan`, `continuity`, `style_notes`, `project_override`, `artist_note`, `output_contract`, `planner_refs`.
-2. Extend the current `composeStoryboardRenderPrompt` into a provenance-returning composer for the image-render surface with segments: `workflow_render_contract`, `ref_binding_contract`, `board_prompt`, `edit_instruction`, `guardrails`, `refs`, `context_trace`, `provider_params`.
-3. Persist the composition on generation attempts / storyboard version metadata; keep routine receipts lean.
-4. When this second surface is composed, replace `describe_video_prompt` with the general `describe_prompt({ kind })` read action instead of adding sibling `describe_storyboard_prompt`.
+2. ✅ Extend the current `composeStoryboardRenderPrompt` into a provenance-returning composer for the image-render surface with segments: `workflow_render_contract`, `ref_binding_contract`, `board_prompt`, and `edit_instruction`, plus images and provider params.
+3. ✅ Persist the render composition on storyboard version metadata; keep routine receipts lean.
+4. Next: add Studio payload UI for storyboard render and, when adding MCP read access, replace `describe_video_prompt` with the general `describe_prompt({ kind })` read action instead of adding sibling `describe_storyboard_prompt`.
 
 Open questions for that slice: whether planner and renderer should share one `kind` with `phase: planner|render`, or separate kinds (`storyboard_planner`, `storyboard_render`); and whether `promptOverride` on storyboard render should bypass only `board_prompt` or the whole renderer composition.
 
