@@ -482,6 +482,13 @@ const deleteShotInputSchema = z.object({
   force: z.boolean().optional(),
   note: mediumText.optional(),
 });
+const videoPromptSlotsInputSchema = z.object({
+  includeFormat: z.boolean().optional(),
+  includeShotBeat: z.boolean().optional(),
+  includeRefs: z.boolean().optional(),
+  includeCutPlan: z.boolean().optional(),
+  includeAudio: z.boolean().optional(),
+}).optional();
 const shotPromptsInputSchema = z.object({
   projectId,
   shots: maxArray(z.object({
@@ -490,6 +497,7 @@ const shotPromptsInputSchema = z.object({
     motionPrompt: optionalPromptText,
     direction: mediumText.optional(),
     continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+    videoPromptSlots: videoPromptSlotsInputSchema,
     baseHash: idString.optional(),
   }), 100).min(1),
   force: z.boolean().optional(),

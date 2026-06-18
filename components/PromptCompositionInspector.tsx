@@ -7,6 +7,12 @@ type PromptCompositionInspectorProps = {
   note?: string;
   generatedAt?: string | null;
   source?: string;
+  segmentControls?: Record<string, {
+    value?: boolean;
+    disabled?: boolean;
+    title?: string;
+    onChange: (next: boolean | undefined) => void;
+  }>;
 };
 
 const textForSegment = (segment: PromptCompositionSegment): string => {
@@ -32,6 +38,7 @@ export const PromptCompositionInspector: React.FC<PromptCompositionInspectorProp
   note,
   generatedAt,
   source,
+  segmentControls,
 }) => {
   const segments = Array.isArray(composition?.segments) ? composition?.segments || [] : [];
   const images = Array.isArray(composition?.images) ? composition?.images || [] : [];
@@ -104,6 +111,7 @@ export const PromptCompositionInspector: React.FC<PromptCompositionInspectorProp
                 <div className="space-y-1.5">
                   {segments.map((segment, index) => {
                     const body = textForSegment(segment);
+                    const control = segment.slot ? segmentControls?.[segment.slot] : undefined;
                     return (
                       <details key={`${segment.slot || segment.label || index}-${index}`} className="rounded border border-white/[0.06] bg-black/10">
                         <summary className="list-none cursor-pointer px-2 py-1.5 flex items-center justify-between gap-2 hover:bg-white/[0.025] transition-colors">
@@ -115,6 +123,34 @@ export const PromptCompositionInspector: React.FC<PromptCompositionInspectorProp
                         </summary>
                         <div className="border-t border-white/[0.05] px-2 py-2 space-y-1">
                           {segment.editPath && <p className="text-[10px] text-zinc-500 font-mono">edit: {segment.editPath}</p>}
+                          {control && (
+                            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
+                              <span>Next run:</span>
+                              {([
+                                ['default', undefined],
+                                ['on', true],
+                                ['off', false],
+                              ] as const).map(([label, value]) => {
+                                const active = control.value === value;
+                                return (
+                                  <button
+                                    key={label}
+                                    type="button"
+                                    disabled={control.disabled}
+                                    onClick={() => control.onChange(value)}
+                                    className={`rounded border px-1.5 py-0.5 transition-colors disabled:opacity-40 ${
+                                      active
+                                        ? 'border-white/20 bg-white/10 text-zinc-100'
+                                        : 'border-white/[0.07] bg-white/[0.02] text-zinc-500 hover:text-zinc-300 hover:border-white/15'
+                                    }`}
+                                    title={control.title}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                           {body && <pre className={`text-[11px] leading-relaxed font-mono whitespace-pre-wrap ${segment.included === false ? 'text-zinc-500' : 'text-zinc-300'}`}>{body}</pre>}
                         </div>
                       </details>

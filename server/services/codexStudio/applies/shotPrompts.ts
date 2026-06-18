@@ -18,7 +18,26 @@ export type ShotPromptApplyInput = {
   motionPrompt?: string;
   direction?: string;
   continuityFrom?: 'cut' | 'prev_shot';
+  videoPromptSlots?: Partial<{
+    includeFormat: boolean;
+    includeShotBeat: boolean;
+    includeRefs: boolean;
+    includeCutPlan: boolean;
+    includeAudio: boolean;
+  }>;
   baseHash?: string;
+};
+
+const sanitizeVideoPromptSlots = (value: unknown): Record<string, boolean> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const allowed = ['includeFormat', 'includeShotBeat', 'includeRefs', 'includeCutPlan', 'includeAudio'];
+  const out: Record<string, boolean> = {};
+  for (const key of allowed) {
+    if (typeof (value as Record<string, unknown>)[key] === 'boolean') {
+      out[key] = (value as Record<string, boolean>)[key];
+    }
+  }
+  return out;
 };
 
 export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyInput[], opts: { force?: boolean } = {}) => {
@@ -36,19 +55,22 @@ export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyI
       rejected.push(applyError('shot_not_found', `Shot not found in project: ${input.shotId}`, { shotId: input.shotId }));
       continue;
     }
-    if (target.shot.locked) {
-      rejected.push(applyError('locked', 'Shot is locked. Unlock before applying prompt changes.', { shotId: input.shotId }));
-      continue;
-    }
-
-    const provided = [
+    const promptFields = [
       input.visualPrompt !== undefined ? 'visualPrompt' : null,
       input.motionPrompt !== undefined ? 'motionPrompt' : null,
       input.direction !== undefined ? 'direction' : null,
       input.continuityFrom !== undefined ? 'continuityFrom' : null,
     ].filter(Boolean) as string[];
+    const provided = [
+      ...promptFields,
+      input.videoPromptSlots !== undefined ? 'videoPromptSlots' : null,
+    ].filter(Boolean) as string[];
+    if (target.shot.locked && promptFields.length > 0) {
+      rejected.push(applyError('locked', 'Shot is locked. Unlock before applying prompt text changes. Video prompt slot defaults may still be changed on their own.', { shotId: input.shotId }));
+      continue;
+    }
     if (!provided.length) {
-      rejected.push(applyError('validation_failed', 'At least one prompt field is required.', { shotId: input.shotId }));
+      rejected.push(applyError('validation_failed', 'At least one prompt field or videoPromptSlots object is required.', { shotId: input.shotId }));
       continue;
     }
 
@@ -58,23 +80,27 @@ export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyI
       || (input.continuityFrom && input.continuityFrom !== 'cut' && input.continuityFrom !== 'prev_shot'
         ? applyError('validation_failed', 'continuityFrom must be cut or prev_shot.', { field: 'continuityFrom', shotId: input.shotId })
         : null)
-      || validateBaseHash(shotPromptHash(target.shot), input.baseHash, opts.force, input.shotId);
+      || (promptFields.length ? validateBaseHash(shotPromptHash(target.shot), input.baseHash, opts.force, input.shotId) : null);
     if (validation) {
       rejected.push(validation);
       continue;
     }
 
+    const nextVideoPromptSlots = input.videoPromptSlots !== undefined
+      ? sanitizeVideoPromptSlots(input.videoPromptSlots)
+      : target.shot.videoPromptSlots;
     const nextShot = {
       ...target.shot,
       ...(input.visualPrompt !== undefined ? { visualPrompt: input.visualPrompt.trim() } : {}),
       ...(input.motionPrompt !== undefined ? { motionPrompt: input.motionPrompt.trim() } : {}),
       ...(input.direction !== undefined ? { direction: input.direction.trim() } : {}),
       ...(input.continuityFrom !== undefined ? { continuityFrom: input.continuityFrom } : {}),
+      ...(input.videoPromptSlots !== undefined ? { videoPromptSlots: nextVideoPromptSlots } : {}),
     };
     const fieldsChanged = provided.filter((field) => (nextShot as any)[field] !== (target.shot as any)[field]);
-    const dbUpdate: Record<string, unknown> = {
+    const dbUpdate: Record<string, unknown> = promptFields.length ? {
       prompts_stale: false,
-    };
+    } : {};
     if (input.visualPrompt !== undefined) {
       dbUpdate.visual_prompt = input.visualPrompt.trim();
       dbUpdate.refined_from_prev_frame = 0;
@@ -85,6 +111,7 @@ export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyI
     }
     if (input.direction !== undefined) dbUpdate.direction = input.direction.trim();
     if (input.continuityFrom !== undefined) dbUpdate.continuity_from = input.continuityFrom;
+    if (input.videoPromptSlots !== undefined) dbUpdate.video_prompt_slots = nextVideoPromptSlots;
 
     await updateRows('shots', { id: input.shotId }, dbUpdate);
 

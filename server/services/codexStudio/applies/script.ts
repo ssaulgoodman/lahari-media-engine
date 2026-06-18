@@ -104,6 +104,7 @@ const replaceScriptRows = async (projectId: string, normalized: ReturnType<typeo
     use_prev_storyboard_ref: false,
     include_prev_cut_plan: null,
     excluded_refs: { storyboard: [], video: [] },
+    video_prompt_slots: {},
     sort_order: index,
     image_status: 'idle',
     video_status: 'idle',

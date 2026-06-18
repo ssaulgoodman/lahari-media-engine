@@ -70,7 +70,7 @@ const noBeat = composeStoryboardVideoPrompt({ ...base, include: { beat: false } 
 assert.doesNotMatch(noBeat.text, /Narmada reflection/, 'excluded beat must not be in the sent text');
 assert.equal(noBeat.segments.find((s) => s.slot === 'beat')!.included, false, 'excluded beat stays in the audit, marked not-included');
 
-// 10. Workflow defaults can exclude a slot, but call-level include can opt it back in.
+// 10. Workflow or saved shot defaults can exclude a slot, but call-level include can opt it back in.
 const defaultNoBeat = composeStoryboardVideoPrompt({ ...base, defaultInclude: { beat: false } });
 assert.doesNotMatch(defaultNoBeat.text, /Narmada reflection/, 'default-excluded beat must not be in the sent text');
 assert.equal(defaultNoBeat.segments.find((s) => s.slot === 'beat')!.included, false, 'default-excluded beat stays in the audit');

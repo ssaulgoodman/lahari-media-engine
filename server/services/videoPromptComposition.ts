@@ -16,9 +16,10 @@
 //  - Every segment is self-describing: `source` says where it came from, `editPath`
 //    says the exact action that changes it. The agent never reverse-engineers the
 //    architecture — the segment tells it what it is and which tool edits it.
-//  - The `include` map is the seam a video contextOverride drives (e.g. dropping
-//    the shot beat). Excluded segments stay in the list (marked not-included) so
-//    the audit still shows what was deliberately left out.
+//  - The `defaultInclude` + `include` maps are the seams saved per-shot defaults
+//    and one-off contextOverrides drive (e.g. dropping the shot beat). Excluded
+//    segments stay in the list (marked not-included) so the audit still shows
+//    what was deliberately left out.
 
 export type VideoPromptSlot =
   | 'format'      // board treatment + clip kind: recipe/override when present, engine default otherwise
@@ -128,7 +129,7 @@ export const composeStoryboardVideoPrompt = (input: ComposeStoryboardVideoInput)
     segments.push({
       slot: 'beat', label: 'Shot beat', text: `Shot: ${beat}`,
       source: 'shots.direction',
-      editPath: 'apply_text_edits | contextOverrides.includeShotBeat=true/false',
+      editPath: 'apply_text_edits | apply_shot_prompts.videoPromptSlots.includeShotBeat | contextOverrides.includeShotBeat',
       included: include('beat'),
     });
   }
@@ -142,7 +143,7 @@ export const composeStoryboardVideoPrompt = (input: ComposeStoryboardVideoInput)
     slot: 'refs', label: 'Identity refs',
     text: `Identity refs (do not redesign):\n${refBindings}\nReference images are guides, not frames. Never insert them into the video — even briefly, even for a single frame. They only anchor likeness, costume, and environment geometry.`,
     source: 'locked storyboard version refs',
-    editPath: 'lock_reference | refine_storyboard | excluded_refs',
+    editPath: 'lock_reference | refine_storyboard | excluded_refs | apply_shot_prompts.videoPromptSlots.includeRefs | contextOverrides.includeRefs',
     included: include('refs'),
   });
 
@@ -152,7 +153,7 @@ export const composeStoryboardVideoPrompt = (input: ComposeStoryboardVideoInput)
     segments.push({
       slot: 'cut_plan', label: 'Panel beats', text: `Panel beats:\n${cutPlan}`,
       source: input.cutPlanFromShot ? 'shots.storyboard_cut_plan' : 'engine (derived timing)',
-      editPath: input.cutPlanFromShot ? 'refine_storyboard (replan) | contextOverrides.includeCutPlan=false' : 'not editable (engine)',
+      editPath: input.cutPlanFromShot ? 'refine_storyboard (replan) | apply_shot_prompts.videoPromptSlots.includeCutPlan | contextOverrides.includeCutPlan' : 'not editable (engine)',
       included: include('cut_plan'),
     });
   }
@@ -170,7 +171,7 @@ export const composeStoryboardVideoPrompt = (input: ComposeStoryboardVideoInput)
     segments.push({
       slot: 'audio', label: 'Audio direction', text: audioParts.join('\n'),
       source: 'shot audio plan / project audio settings',
-      editPath: 'apply_audio_plan | apply_cast_voice | nativeAudioMode',
+      editPath: 'apply_audio_plan | apply_cast_voice | nativeAudioMode | apply_shot_prompts.videoPromptSlots.includeAudio | contextOverrides.includeAudio',
       included: include('audio'),
     });
   }

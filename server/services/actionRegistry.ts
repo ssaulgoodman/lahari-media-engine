@@ -513,13 +513,16 @@ export const SCRIPT_ACTION_SPECS = {
     surface: 'script',
     mutates: true,
     paid: false,
-    description: 'Persist Codex-written visual, motion, direction, or continuity prompt text for one or more shots. This is the prompt-edit path; use it when the artist asks for a tonal/wording change rather than a media regenerate.',
+    description: 'Persist Codex-written visual, motion, direction, continuity prompt text, or storyboard-video prompt slot defaults for one or more shots. This is the prompt-edit path; use it when the artist asks for a tonal/wording change or wants future video generations to include/drop a prompt segment by default.',
     input: {
       projectId: 'string',
-      shots: 'array of {shotId, visualPrompt?, motionPrompt?, direction?, continuityFrom?, baseHash?}',
+      shots: 'array of {shotId, visualPrompt?, motionPrompt?, direction?, continuityFrom?, videoPromptSlots?, baseHash?}. videoPromptSlots supports includeShotBeat/includeCutPlan/includeRefs/includeAudio booleans; omit a key to follow recipe defaults.',
       force: 'optional boolean',
     },
-    examples: [{ projectId: 'project_uuid', shots: [{ shotId: 'shot_uuid', motionPrompt: 'Slow push-in.' }] }],
+    examples: [
+      { projectId: 'project_uuid', shots: [{ shotId: 'shot_uuid', motionPrompt: 'Slow push-in.' }] },
+      { projectId: 'project_uuid', shots: [{ shotId: 'shot_uuid', videoPromptSlots: { includeShotBeat: false, includeCutPlan: true } }] },
+    ],
   },
   apply_shot_workflow_modes: {
     key: 'apply_shot_workflow_modes',

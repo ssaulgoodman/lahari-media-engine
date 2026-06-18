@@ -645,6 +645,14 @@ export type PromptCompositionSegment = {
   value?: unknown;
 };
 
+export type VideoPromptSlotDefaults = {
+  includeFormat?: boolean;
+  includeShotBeat?: boolean;
+  includeRefs?: boolean;
+  includeCutPlan?: boolean;
+  includeAudio?: boolean;
+};
+
 export type PromptCompositionImage = {
   label?: string;
   source?: string;

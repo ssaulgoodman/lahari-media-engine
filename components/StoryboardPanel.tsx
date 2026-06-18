@@ -1114,6 +1114,42 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
   // minimal shot list when the cut plan is empty, so generating with no
   // motion guide is safe.
   const canGenerate = isLocked && !isVideoGenerating;
+  const setVideoPromptSlotDefault = (
+    field: 'includeShotBeat' | 'includeRefs' | 'includeCutPlan' | 'includeAudio',
+    next: boolean | undefined,
+  ) => {
+    const current = shot.videoPromptSlots || {};
+    const nextSlots = { ...current };
+    if (next === undefined) delete nextSlots[field];
+    else nextSlots[field] = next;
+    onUpdateShot(scene.id, shot.id, { videoPromptSlots: nextSlots });
+  };
+  const videoPromptSegmentControls = {
+    beat: {
+      value: shot.videoPromptSlots?.includeShotBeat,
+      disabled: isVideoGenerating,
+      title: 'Save whether the shot beat is included by default in future video generations for this shot.',
+      onChange: (next: boolean | undefined) => setVideoPromptSlotDefault('includeShotBeat', next),
+    },
+    refs: {
+      value: shot.videoPromptSlots?.includeRefs,
+      disabled: isVideoGenerating,
+      title: 'Save whether reference bindings are included by default in future video generations for this shot.',
+      onChange: (next: boolean | undefined) => setVideoPromptSlotDefault('includeRefs', next),
+    },
+    cut_plan: {
+      value: shot.videoPromptSlots?.includeCutPlan,
+      disabled: isVideoGenerating,
+      title: 'Save whether the cut plan is included by default in future video generations for this shot.',
+      onChange: (next: boolean | undefined) => setVideoPromptSlotDefault('includeCutPlan', next),
+    },
+    audio: {
+      value: shot.videoPromptSlots?.includeAudio,
+      disabled: isVideoGenerating,
+      title: 'Save whether audio direction is included by default in future video generations for this shot.',
+      onChange: (next: boolean | undefined) => setVideoPromptSlotDefault('includeAudio', next),
+    },
+  };
 
   return (
     <>
@@ -1181,6 +1217,7 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
           note={promptDescription?.note || (promptDescriptionLoading ? 'Loading the latest captured video prompt payload.' : undefined)}
           generatedAt={promptDescription?.generatedAt}
           source={promptDescription?.source}
+          segmentControls={videoPromptSegmentControls}
         />
       )}
 

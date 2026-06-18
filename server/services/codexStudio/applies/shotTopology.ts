@@ -272,6 +272,7 @@ export const addShot = async (project: Project, input: AddShotInput) => {
     use_prev_storyboard_ref: false,
     include_prev_cut_plan: null,
     excluded_refs: { storyboard: [], video: [] },
+    video_prompt_slots: {},
     workflow_mode: nextShotBase.workflowMode,
     storyboard_prompt: nextShotBase.storyboardPrompt || null,
     storyboard_cut_plan: nextShotBase.storyboardCutPlan || null,

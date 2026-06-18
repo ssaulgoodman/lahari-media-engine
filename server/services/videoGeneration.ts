@@ -64,6 +64,37 @@ type VideoContextOverrides = ContextOverrides & {
   includeAudio?: boolean;
 };
 
+type PersistedVideoPromptSlots = Partial<{
+  includeFormat: boolean;
+  includeShotBeat: boolean;
+  includeRefs: boolean;
+  includeCutPlan: boolean;
+  includeAudio: boolean;
+}>;
+
+const parsePersistedVideoPromptSlots = (value: any): PersistedVideoPromptSlots => {
+  const parsed = parseJson<Record<string, unknown> | null>(value, null);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  const out: PersistedVideoPromptSlots = {};
+  if (typeof parsed.includeFormat === 'boolean') out.includeFormat = parsed.includeFormat;
+  if (typeof parsed.includeShotBeat === 'boolean') out.includeShotBeat = parsed.includeShotBeat;
+  if (typeof parsed.includeRefs === 'boolean') out.includeRefs = parsed.includeRefs;
+  if (typeof parsed.includeCutPlan === 'boolean') out.includeCutPlan = parsed.includeCutPlan;
+  if (typeof parsed.includeAudio === 'boolean') out.includeAudio = parsed.includeAudio;
+  return out;
+};
+
+const videoPromptSlotsToInclude = (slots?: PersistedVideoPromptSlots | VideoContextOverrides) => {
+  if (!slots) return undefined;
+  return {
+    format: slots.includeFormat,
+    beat: slots.includeShotBeat,
+    refs: slots.includeRefs,
+    cut_plan: slots.includeCutPlan,
+    audio: slots.includeAudio,
+  };
+};
+
 type DialogueLine = {
   id?: string;
   characterId?: string;
@@ -479,6 +510,9 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
     const storyboardVideoDefaultInclude = videoRecipeName === 'hf_music_video'
       ? { beat: false as const }
       : undefined;
+    const persistedVideoPromptSlots = parsePersistedVideoPromptSlots(shot.video_prompt_slots);
+    const persistedVideoPromptInclude = videoPromptSlotsToInclude(persistedVideoPromptSlots);
+    const callVideoPromptInclude = videoPromptSlotsToInclude(opts.contextOverrides);
     const nativeAudioMode = opts.nativeAudioMode || recipeNativeAudioMode || 'auto';
     const canGenerateNativeAudio = modelSpec.family === 'seedance' || modelSpec.family === 'veo';
     const nativeVideoAudio = canGenerateNativeAudio
@@ -554,15 +588,13 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
         lipsyncEnabled: !!shot.lipsync_enabled && !planWantsLipsync,
         nativeAudioEnabled: nativeVideoAudio,
         audioCue: storyboardAudioCue,
-        defaultInclude: storyboardVideoDefaultInclude,
-        // contextOverrides drive per-slot include/exclude (e.g. drop the shot beat).
-        include: opts.contextOverrides ? {
-          format: opts.contextOverrides.includeFormat,
-          beat: opts.contextOverrides.includeShotBeat,
-          refs: opts.contextOverrides.includeRefs,
-          cut_plan: opts.contextOverrides.includeCutPlan,
-          audio: opts.contextOverrides.includeAudio,
-        } : undefined,
+        // Recipe defaults and saved per-shot slot defaults both feed the same
+        // composer seam. Per-call contextOverrides still win for one-off runs.
+        defaultInclude: {
+          ...(storyboardVideoDefaultInclude || {}),
+          ...(persistedVideoPromptInclude || {}),
+        },
+        include: callVideoPromptInclude,
         images: [
           ...(storyboardAsset?.file_path
             ? [{ ref: '@image1', role: 'storyboard board', assetId: shot.storyboard_asset_id || null, source: 'locked storyboard version' }]
@@ -578,6 +610,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
           nativeAudioMode,
           nativeAudio: nativeVideoAudio,
           lipsync: !!shot.lipsync_enabled && !planWantsLipsync,
+          videoPromptSlots: persistedVideoPromptSlots,
         },
       })
       : null;

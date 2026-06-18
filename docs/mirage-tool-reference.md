@@ -94,7 +94,7 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 |---|---|---|---|:-:|
 | `apply_concept` | concept | Saves Codex-written concept JSON to DB | DB only | — |
 | `apply_script` | script | Saves Codex-written script (JSON or markdown) to DB | DB only | — |
-| `apply_shot_prompts` | script | Saves Codex-written visual/motion/direction text per shot | DB only | — |
+| `apply_shot_prompts` | script | Saves Codex-written visual/motion/direction text and per-shot video prompt slot defaults | DB only | — |
 | `apply_shot_workflow_modes` | script | Sets per-shot path: `auto` / `storyboard` / `keyframe` | DB only | — |
 | `generate_style_candidates` | style | Renders style reference candidate batch | image model | ● |
 | `identify_style` | style | Reads a style image, returns concise description | project.text_provider.refine (with image input); hidden from materialized agent action files | ● |

@@ -79,6 +79,14 @@ export interface AudioPlan {
   soundNotes?: string;
 }
 
+export type VideoPromptSlotDefaults = {
+  includeFormat?: boolean;
+  includeShotBeat?: boolean;
+  includeRefs?: boolean;
+  includeCutPlan?: boolean;
+  includeAudio?: boolean;
+};
+
 export interface VideoShot {
   id: string;
   workflowMode?: 'auto' | 'storyboard' | 'keyframe';
@@ -127,6 +135,10 @@ export interface VideoShot {
   /** Nullable: null means "use smart default" (true when continuity_from is
    *  'prev_shot' and a prev shot exists in scene). True/false override. */
   includePrevCutPlan?: boolean | null;
+  /** Saved defaults for storyboard-video prompt composition. Undefined means
+   *  "follow recipe/engine default"; booleans force the slot on/off for future
+   *  video generations unless a one-off contextOverride overrides it. */
+  videoPromptSlots?: VideoPromptSlotDefaults;
   useNextAsEndFrame: boolean;
   error?: string;
   lastError?: string;

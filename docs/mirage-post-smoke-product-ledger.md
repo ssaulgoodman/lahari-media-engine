@@ -162,6 +162,12 @@ longer surprises the user by silently reintroducing a previously removed segment
 default while preserving the segment in the audit as not-included. Studio and MCP both inherit
 that behavior because it lives in the composer/prompt path, not in an agent habit.
 
+**Second code slice landed locally:** shots now carry `video_prompt_slots` as saved
+storyboard-video segment defaults. Studio's prompt inspector can save `beat`, `refs`,
+`cut_plan`, or `audio` as default/on/off for the next run, and agents use
+`apply_shot_prompts.videoPromptSlots` for the same durable lever. One-off
+`contextOverrides` still win for a single call and stay visible in the prompt audit.
+
 ### P2b — Per-Shot Workflow Mode Overrides `[ready soon]`
 
 **Goal:** Let one shot use keyframe mode inside a storyboard-first project, or storyboard mode

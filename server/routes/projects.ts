@@ -36,6 +36,18 @@ const parseJson = <T,>(value: any, fallback: T): T => {
   if (typeof value === 'object') return value as T;
   try { return JSON.parse(value) as T; } catch { return fallback; }
 };
+const sanitizeVideoPromptSlots = (value: any): Record<string, boolean> => {
+  const parsed = typeof value === 'string' ? parseJson<Record<string, unknown> | null>(value, null) : value;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  const allowed = ['includeFormat', 'includeShotBeat', 'includeRefs', 'includeCutPlan', 'includeAudio'];
+  const out: Record<string, boolean> = {};
+  for (const key of allowed) {
+    if (typeof (parsed as Record<string, unknown>)[key] === 'boolean') {
+      out[key] = (parsed as Record<string, boolean>)[key];
+    }
+  }
+  return out;
+};
 const platformProjectFields = (fields: Record<string, any>) =>
   supportsPlatformColumns() ? fields : {};
 
@@ -422,6 +434,7 @@ const forkProject = async (
           excluded_refs: shot.excluded_refs,
           use_prev_storyboard_ref: shot.use_prev_storyboard_ref,
           include_prev_cut_plan: shot.include_prev_cut_plan,
+          video_prompt_slots: sanitizeVideoPromptSlots(shot.video_prompt_slots),
         });
       }
     }
@@ -697,6 +710,7 @@ const _getFullProjectCore = async (projectId: string) => {
         includePrevCutPlan: shot.include_prev_cut_plan === null || shot.include_prev_cut_plan === undefined
           ? null
           : !!shot.include_prev_cut_plan,
+        videoPromptSlots: sanitizeVideoPromptSlots(shot.video_prompt_slots),
         refinedFromPrevFrame: !!shot.refined_from_prev_frame,
         endImageStatus: shot.end_image_status || 'idle',
         endVisualPrompt: shot.end_visual_prompt || undefined,
@@ -2178,6 +2192,13 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
     };
     await updateRows('shots', { id: shotId }, { excluded_refs: JSON.stringify(payload) });
     eventTypes.push('excluded_refs');
+  }
+
+  const { videoPromptSlots } = req.body;
+  if (videoPromptSlots !== undefined) {
+    const payload = sanitizeVideoPromptSlots(videoPromptSlots);
+    await updateRows('shots', { id: shotId }, { video_prompt_slots: JSON.stringify(payload) });
+    eventTypes.push('video_prompt_slots');
   }
 
   if (eventTypes.length) {

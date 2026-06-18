@@ -268,7 +268,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 **Notes:**
 - **✅ Smoke update 2026-06-16:** representative music-video storyboard-mode smoke passed well enough to continue. The useful unlock was not just stronger wording; it was prompt anatomy inspection: seeing the actual `format`/`beat`/`refs`/`cut_plan`/`audio`/`guardrail` segments made it possible to remove bad inputs and improve output quality. This moves the next work from hidden prompt tweaks to a Studio-visible payload inspector/manipulator.
-- **Current gap:** `contextOverrides` are per-call. If Codex drops `includeShotBeat` for one generation, Studio does not automatically inherit that choice on a later click unless the state is persisted somewhere explicit. The product rule should be: one-off overrides are visible as one-off; "save as shot/project default" is a separate deliberate action.
+- **Current status:** `contextOverrides` remain per-call and visible as such. Durable shot-level video segment defaults now live in `shots.video_prompt_slots` and can be set through Studio's payload inspector or `apply_shot_prompts.videoPromptSlots`, so a later Studio click no longer silently reintroduces a deliberately saved exclusion.
 - **Read-side guardrail:** `describe_prompt({ kind })` is the composed prompt inspector for video and storyboard render payloads. `describe_video_prompt` is compatibility only; do not add `describe_storyboard_prompt`, `describe_look_prompt`, etc.
 
 **Pass log:**
