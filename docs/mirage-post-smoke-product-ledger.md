@@ -32,6 +32,14 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
 - The best HF video payload spine is: workflow format + locked storyboard + explicit refs +
   cut plan. Shot-direction Beat text should be excluded by default for HF music-video video
   generation; artists/agents can opt it back in when it is actually useful.
+- The larger product goal is an agent that gets smarter, faster, and more creative from each
+  production run. Successful prompt moves, failed model calls, ref tricks, storyboard repairs,
+  and render decisions should become reusable taste/workflow memory instead of dying in chat.
+- Studio needs obvious manual override controls for power users: upload this storyboard exactly
+  as-is, lock it, use it downstream. No ceremony.
+- Render/editor is not the final creative surface. Mirage should hand shots, audio, captions,
+  and metadata cleanly into a professional finishing path, ideally a Premiere Pro extension or
+  export bridge, without losing Mirage shot identity.
 
 ## Locked Product Calls
 
@@ -50,6 +58,11 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
 - **P5 — Do not poll by habit.** After launching a paid async generation, return the job id and
   let Studio/realtime or an explicit user request drive status polling. Polling should be a
   conscious watch mode, not the default agent loop.
+- **P6 — Learning beats logging.** Audit artifacts only matter if the system can reuse them:
+  promote repeated wins into recipes/style notes/personas/tool defaults, and surface candidate
+  memories to the agent at generation time.
+- **P7 — Pro finishing is a first-class path.** Mirage should make great clips and rough cuts,
+  but the long-term editor bridge should respect professional finishing workflows.
 
 ## Tracks
 
@@ -131,6 +144,24 @@ Work:
 second composed surface, design `describe_prompt({ kind, projectId, shotId?, entityId? })`
 instead of adding a family of `describe_*_prompt` tools.
 
+### P3b — Upload Storyboard As-Is `[ready now]`
+
+**Goal:** a human or agent can bypass generation and attach an exact storyboard image without
+fighting the UI.
+
+Existing backend shape already exists through upload + `import_storyboard_image`; the missing
+product work is a clean Studio button:
+
+- upload/select image
+- assign to the current shot
+- optional lock immediately
+- preserve provenance: uploaded-as-is, source asset id, uploader, timestamp
+- no hidden prompt rewrite, no provider call, no style reinterpretation
+
+**Done when:** in Studio, a user can click "Upload storyboard as-is", choose/drop an image, and
+see it become the active board for that shot with the same downstream eligibility as generated
+boards.
+
 ### P4 — Shot-Scoped Agent Reads `[ready now]`
 
 **Goal:** Avoid using broad project packets for local shot decisions.
@@ -207,6 +238,30 @@ through the existing upload/import actions (`import_storyboard_image`, `lock_sto
 compact receipt. The main director thread should carry the intent, selected asset id, and result,
 not the full visual iteration transcript.
 
+### P5d — Agent Learning Loop `[ready soon]`
+
+**Goal:** each production run makes the next run faster and more tasteful.
+
+Inputs worth capturing:
+
+- prompt-composition wins and failures
+- model/provider choices that worked for a workflow
+- ref-bundle tricks, e.g. "include start env + destination env"
+- storyboard repair notes and imagegen/import outcomes
+- render/timeline adjustments
+- artist final selections versus rejected candidates
+
+Reuse paths:
+
+- promote repeated full wrappers to workflow recipes
+- promote reusable phrasing to style notes
+- save reusable identities as personas
+- expose prior project taste through `query_artist_memory`
+- write compact per-shot final-payload artifacts for local/debug recall
+
+**Done when:** before a paid generation, the agent can see relevant prior wins for this artist,
+workflow, model, and shot type without loading whole old projects or chat history.
+
 ### P6 — Render Timeline UX `[after P1/P2 shape is clear]`
 
 **Goal:** Make Render feel like a real production timeline, not a basic append-only preview.
@@ -221,6 +276,21 @@ Focus areas:
 - direct access to render history and salvaged late outputs
 
 Agent actions should follow these UI/data primitives, not precede them.
+
+### P6b — Premiere Pro Bridge `[future, but important]`
+
+**Goal:** Mirage can hand work into professional finishing without flattening the production graph.
+
+Possible shapes:
+
+- export an organized Premiere-ready package: clips, audio, captions, cut metadata, thumbnails,
+  shot ids, scene ids, model/provider notes
+- generate EDL/XML/FCPXML where practical, with Mirage shot ids preserved as clip names/markers
+- later, a Premiere Pro extension panel that can browse Mirage project shots, pull latest clips,
+  replace clips, and push selected finals back to Mirage
+
+**Done when:** an editor can move from Mirage Studio to Premiere with all approved clips, timing,
+audio, and shot identity intact, then return final/select media without manual file archaeology.
 
 ### P7 — Render Ops + Storage Policy `[ready now]`
 
@@ -248,9 +318,11 @@ Recommended order:
 3. P3 storyboard composer audit.
 4. P4 shot-scoped agent reads and summary-first dry-run mode.
 5. P5b async job watch discipline.
-6. P5 local audit artifacts and P5c isolated image fix workers.
-7. P7 storage/render ops fix.
-8. P6 timeline overhaul and then timeline agent actions.
+6. P3b upload storyboard as-is.
+7. P5 local audit artifacts, P5c isolated image fix workers, and P5d agent learning loop.
+8. P7 storage/render ops fix.
+9. P6 timeline overhaul and then timeline agent actions.
+10. P6b Premiere Pro bridge after timeline/export semantics are stable.
 
 P1/P2 are the most valuable first slice because they turn the successful smoke maneuver into a
 repeatable human/agent product surface.
