@@ -28,7 +28,7 @@ Fix the lowest layer that explains the pattern.
 - **One call needs different context** -> use `contextOverrides`.
 - **A full prompt recipe keeps working** -> use `apply_project_prompt_override`; otherwise prefer style notes.
 
-Video generation has no `contextOverrides`. If video loses style, fix the board/frame/motion prompt, style anchor, or model before spending again.
+Video generation has slot/ref `contextOverrides` in storyboard mode. If video loses style, dry-run first and verify the `refs` segment plus `composition.images`; fix the board/frame/motion prompt, style anchor, or selected refs before spending again.
 
 ## Style Direction Pattern
 

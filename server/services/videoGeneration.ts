@@ -475,6 +475,10 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
     }
     const keyframePromptHasDialogue = promptAlreadyContainsDialogue(baseKeyframePromptText, dialogueLines);
     const recipeNativeAudioMode = normalizeNativeAudioMode(projectVideoRecipeMeta?.video?.nativeAudioMode);
+    const videoRecipeName = typeof projectVideoRecipeMeta?.name === 'string' ? projectVideoRecipeMeta.name : '';
+    const storyboardVideoDefaultInclude = videoRecipeName === 'hf_music_video'
+      ? { beat: false as const }
+      : undefined;
     const nativeAudioMode = opts.nativeAudioMode || recipeNativeAudioMode || 'auto';
     const canGenerateNativeAudio = modelSpec.family === 'seedance' || modelSpec.family === 'veo';
     const nativeVideoAudio = canGenerateNativeAudio
@@ -550,6 +554,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
         lipsyncEnabled: !!shot.lipsync_enabled && !planWantsLipsync,
         nativeAudioEnabled: nativeVideoAudio,
         audioCue: storyboardAudioCue,
+        defaultInclude: storyboardVideoDefaultInclude,
         // contextOverrides drive per-slot include/exclude (e.g. drop the shot beat).
         include: opts.contextOverrides ? {
           format: opts.contextOverrides.includeFormat,

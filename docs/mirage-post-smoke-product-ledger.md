@@ -26,6 +26,12 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
   Next reads should be shot-scoped and summary-first, with exact payloads available on demand.
 - The render timeline works, but it is still basic. It needs clearer clip/audio controls,
   canonical-vs-local state, render eligibility, and storage/preview policy.
+- The HF sketch-board technique is a winning music-video storyboard path. It should be the
+  canonical board-planning mode for HF/music-led projects, with normal rendered boards still
+  available for other workflows.
+- The best HF video payload spine is: workflow format + locked storyboard + explicit refs +
+  cut plan. Shot-direction Beat text should be excluded by default for HF music-video video
+  generation; artists/agents can opt it back in when it is actually useful.
 
 ## Locked Product Calls
 
@@ -41,6 +47,9 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
   surfaces.
 - **P4 — Timeline power comes after timeline clarity.** Do not add broad agent timeline actions
   until the timeline has clean canonical/local state, clip controls, and render eligibility.
+- **P5 — Do not poll by habit.** After launching a paid async generation, return the job id and
+  let Studio/realtime or an explicit user request drive status polling. Polling should be a
+  conscious watch mode, not the default agent loop.
 
 ## Tracks
 
@@ -82,7 +91,8 @@ section, dry-run, and generate with exactly the visible payload.
 
 Problem found in smoke: Codex can generate with `contextOverrides.includeShotBeat=false`, but a
 later Studio click falls back to default shot-direction inclusion unless that choice is visible
-or persisted.
+or persisted. For HF music-video, the better default is no Beat segment at all — the cut plan
+and refs own staging. `contextOverrides.includeShotBeat=true` is the opt-in escape hatch.
 
 Rules:
 
@@ -97,12 +107,19 @@ Rules:
 one-off prior generation or offers a clear "save this behavior" path. A Studio regeneration no
 longer surprises the user by silently reintroducing a previously removed segment.
 
+**First code slice:** HF music-video storyboard video generation excludes the `beat` segment by
+default while preserving the segment in the audit as not-included. Studio and MCP both inherit
+that behavior because it lives in the composer/prompt path, not in an agent habit.
+
 ### P3 — Storyboard Composer Audit `[ready now]`
 
 **Goal:** Storyboard generation gets the same prompt-anatomy discipline as video.
 
 Work:
 
+- Make HF sketch-board generation the canonical storyboard render contract for HF/music-led
+  projects: pure white paper, black ink/pencil, no color, no labels, refs translated into
+  sketch guidance rather than copied as final art.
 - Map every storyboard prompt segment: format, style, cast refs, env refs, prior board,
   continuity, guardrails, final image prompt.
 - Remove duplicate/conflicting wrapper language.
@@ -160,6 +177,36 @@ or a paired `prompt-recipe.md` with:
 **Done when:** after a generation, an agent can diagnose "why did this happen?" from one local
 artifact instead of re-querying project state, job status, and prompt composition separately.
 
+**Workbench role after smoke:** useful for audit/export/debug and large-text handoff; not the
+primary creative loop. Do not make every Studio/MCP action depend on a fresh local sync. The
+local artifact should be written opportunistically when sync happens, not become a serial blocker
+for creative iteration.
+
+### P5b — Async Job Watch Discipline `[ready now]`
+
+**Goal:** paid async jobs should not freeze the director session.
+
+Rules:
+
+- `start_job` returns the job id and the agent should move on unless the user explicitly asks it
+  to watch/poll.
+- Studio realtime and the visual timeline are the default progress surface.
+- If watching is useful, make it an explicit lightweight mode: "watch this job and notify me" or
+  "poll every N seconds while I do X".
+- Long-running jobs should preserve late outputs even after the user starts an alternate attempt.
+
+**Done when:** director sessions can launch a job, continue editing another shot, and later inspect
+the completed output/history without spending chat turns on serial polling.
+
+### P5c — Isolated Image Fix Workers `[ready soon]`
+
+**Goal:** precise board/image repairs should not bloat the main director context.
+
+Use Codex imagegen or a subagent/background worker for small visual fixes, then import the result
+through the existing upload/import actions (`import_storyboard_image`, `lock_storyboard`) with a
+compact receipt. The main director thread should carry the intent, selected asset id, and result,
+not the full visual iteration transcript.
+
 ### P6 — Render Timeline UX `[after P1/P2 shape is clear]`
 
 **Goal:** Make Render feel like a real production timeline, not a basic append-only preview.
@@ -200,9 +247,10 @@ Recommended order:
 2. P2 durable override parity for the same surface.
 3. P3 storyboard composer audit.
 4. P4 shot-scoped agent reads and summary-first dry-run mode.
-5. P5 local audit artifacts.
-6. P7 storage/render ops fix.
-7. P6 timeline overhaul and then timeline agent actions.
+5. P5b async job watch discipline.
+6. P5 local audit artifacts and P5c isolated image fix workers.
+7. P7 storage/render ops fix.
+8. P6 timeline overhaul and then timeline agent actions.
 
 P1/P2 are the most valuable first slice because they turn the successful smoke maneuver into a
 repeatable human/agent product surface.
@@ -214,4 +262,3 @@ repeatable human/agent product surface.
   state and decomposed prompt payloads were more useful than local workbench editing; biggest
   friction was broad `open_project` payloads and verbose dry-run prompt bodies. Render surfaced
   a storage object-size cap; local recovery produced a valid MP4.
-

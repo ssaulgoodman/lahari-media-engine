@@ -77,6 +77,8 @@ export type ComposeStoryboardVideoInput = {
   params?: Record<string, unknown>;
   /** Per-slot include/exclude (the seam a video contextOverride drives). Defaults to all-included. */
   include?: Partial<Record<VideoPromptSlot, boolean>>;
+  /** Recipe/workflow defaults before call-level include/exclude. */
+  defaultInclude?: Partial<Record<VideoPromptSlot, boolean>>;
 };
 
 const SEGMENT_SEPARATOR = '\n\n';
@@ -89,7 +91,7 @@ const DEFAULT_BOARD_TREATMENT =
 export const composeStoryboardVideoPrompt = (input: ComposeStoryboardVideoInput): VideoPromptComposition => {
   const dur = input.clipDuration;
   const tool = input.toolName;
-  const include = (slot: VideoPromptSlot) => input.include?.[slot] ?? true;
+  const include = (slot: VideoPromptSlot) => input.include?.[slot] ?? input.defaultInclude?.[slot] ?? true;
   const segments: VideoPromptSegment[] = [];
 
   // 1. Format — board treatment + clip kind. The recipe/override owns it when
@@ -126,7 +128,7 @@ export const composeStoryboardVideoPrompt = (input: ComposeStoryboardVideoInput)
     segments.push({
       slot: 'beat', label: 'Shot beat', text: `Shot: ${beat}`,
       source: 'shots.direction',
-      editPath: 'apply_text_edits | contextOverrides.includeShotBeat=false',
+      editPath: 'apply_text_edits | contextOverrides.includeShotBeat=true/false',
       included: include('beat'),
     });
   }
