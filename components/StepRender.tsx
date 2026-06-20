@@ -381,6 +381,22 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const heartbeatAgeSeconds = renderMeta?.lastHeartbeatAt
     ? Math.max(0, Math.floor((Date.now() - new Date(renderMeta.lastHeartbeatAt).getTime()) / 1000))
     : null;
+  const engineLabel =
+    renderMeta?.renderEngine === 'ffmpeg'
+      ? 'FFmpeg'
+      : renderMeta?.renderEngine === 'remotion'
+        ? 'Remotion'
+        : null;
+  const renderStatusText = (() => {
+    if (phase.kind === 'rendering') {
+      const stage = renderStageLabel(renderMeta?.stage);
+      if (renderMeta?.ffmpegFallbackReason) return `${stage} · Remotion fallback`;
+      return engineLabel ? `${stage} · ${engineLabel}` : stage;
+    }
+    if (!hasRenderableVisualClip) return 'Add a visual clip';
+    return 'Ready · Space plays preview';
+  })();
+  const renderStatusTitle = renderMeta?.ffmpegFallbackReason || renderStatusText;
 
   // Neutralize the App-level <main>'s p-8 with -m-8 so this view can claim the
   // full viewport below the header. h-[calc(100vh-3.5rem)] = 100vh minus the
@@ -406,6 +422,16 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           </span>
         </div>
         <div className="flex items-center gap-3 flex-none">
+          <span
+            className={`hidden lg:inline-flex max-w-[260px] truncate rounded-md border px-2 py-1 text-[11px] ${
+              !hasRenderableVisualClip && phase.kind !== 'rendering'
+                ? 'border-amber-400/20 bg-amber-950/30 text-amber-200'
+                : 'border-white/[0.08] bg-white/[0.04] text-zinc-400'
+            }`}
+            title={renderStatusTitle}
+          >
+            {renderStatusText}
+          </span>
           {phase.kind === 'rendering' && (
             <div className="hidden sm:flex items-center gap-2 min-w-[210px]">
               <div className="h-1.5 flex-1 rounded-full bg-white/[0.08] overflow-hidden">
@@ -446,6 +472,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             onClick={handleRender}
             disabled={isBusy || !hasRenderableVisualClip}
             className="px-3 py-1 rounded-md bg-white text-black text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title={hasRenderableVisualClip ? 'Render current timeline' : 'Add at least one visual clip to render'}
           >
             {phase.kind === 'done' ? 'Render again' : 'Render'}
           </button>

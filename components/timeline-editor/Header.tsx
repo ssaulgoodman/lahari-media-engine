@@ -328,7 +328,7 @@ const Header: React.FC = () => {
         <button style={btn} onClick={skipBack} title="Skip back 5s">
           <SkipBack size={14} />
         </button>
-        <button style={playBtnStyle} onClick={togglePlay} title={isPlaying ? 'Pause' : 'Play'}>
+        <button style={playBtnStyle} onClick={togglePlay} title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}>
           {isPlaying ? <Pause size={14} /> : <Play size={14} style={{ marginLeft: 1 }} />}
         </button>
         <button style={btn} onClick={skipForward} title="Skip forward 5s">

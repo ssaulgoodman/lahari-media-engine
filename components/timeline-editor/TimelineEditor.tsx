@@ -68,6 +68,21 @@ const sidebarBtn = (active: boolean): React.CSSProperties => ({
   transition: 'all 0.15s',
 });
 
+const isKeyboardControlTarget = (target: EventTarget | null): boolean => {
+  const el = target instanceof HTMLElement ? target : null;
+  if (!el) return false;
+  const tag = el.tagName;
+  return (
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    tag === 'BUTTON' ||
+    tag === 'A' ||
+    el.isContentEditable ||
+    Boolean(el.closest('[contenteditable="true"], [role="textbox"]'))
+  );
+};
+
 // Compute the next video-clip start position from what's already in the store.
 // Audio items intentionally excluded — the song usually runs longer than the
 // video stack, and we don't want uploads to land after its tail.
@@ -983,18 +998,16 @@ const TimelineEditor: React.FC<Props> = ({
 
   // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z = redo. Routes through the store's
   // session-only history handlers (not designcombo's diff history).
-  // S (no modifier) = split selected item at the playhead — the store action
-  // is a silent no-op when the playhead isn't inside a splittable item.
+  // Space = preview play/pause. S (no modifier) = split selected item at the
+  // playhead — the store action is a silent no-op when the playhead isn't
+  // inside a splittable item.
   useEffect(() => {
     if (!stateManager) return;
     const onKey = (e: KeyboardEvent) => {
-      // Always ignore typing into form controls / contentEditable. Otherwise
-      // hitting `S` while renaming a clip would slice the clip in two.
-      const t = e.target as HTMLElement | null;
-      if (t) {
-        const tag = t.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
-      }
+      // Always ignore typing and native control interaction. Otherwise hitting
+      // Space on a button or `S` while renaming a clip would trigger timeline
+      // commands instead of the focused control.
+      if (isKeyboardControlTarget(e.target)) return;
 
       const mod = e.metaKey || e.ctrlKey;
       if (mod && (e.key === 'z' || e.key === 'Z')) {
@@ -1008,6 +1021,14 @@ const TimelineEditor: React.FC<Props> = ({
           e.preventDefault();
           performUndo();
         }
+        return;
+      }
+
+      if (!mod && !e.shiftKey && !e.altKey && (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar')) {
+        const p = useStore.getState().playerRef?.current;
+        if (!p) return;
+        e.preventDefault();
+        p.isPlaying() ? p.pause() : p.play();
         return;
       }
 
