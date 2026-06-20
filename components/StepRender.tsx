@@ -569,16 +569,17 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           initialAudioClips={previewAudioClips}
           projectId={project.id}
           canvasSize={canvasSize}
-          onOpenMediaLibrary={openMediaLibrary}
+          onOpenMediaLibrary={() => setMediaLibraryOpen((o) => !o)}
           mediaLibraryBadgeCount={newMediaCount}
         />
 
-        {/* Media library — bottom drawer over the timeline. Click the handle
-            at the bottom to expand; click any generated or uploaded clip to
-            append it to the timeline. */}
+        {/* Media library — right-docked panel. Overlays only the right strip
+            (not the whole timeline), opens from the tool-rail button, closes
+            with Esc / × / the rail button. Click any clip to append it. */}
         <MediaLibraryDrawer
           project={project}
           open={mediaLibraryOpen}
+          hideClosedHandle
           onOpenChange={(next) => {
             setMediaLibraryOpen(next);
             if (next && newMediaSignature) setMediaNoticeDismissedFor(newMediaSignature);

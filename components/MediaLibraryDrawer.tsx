@@ -221,12 +221,11 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ y: 280, opacity: 0.72 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 280, opacity: 0 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute bottom-0 left-0 right-0 z-20 bg-[#1a1a1e]/95 border-t border-white/[0.08] backdrop-blur-sm flex flex-col"
-            style={{ height: 280 }}
+            initial={{ x: 28, opacity: 0.6 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 28, opacity: 0 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute top-0 right-0 bottom-0 z-20 w-[340px] bg-[#1a1a1e]/95 border-l border-white/[0.08] backdrop-blur-sm flex flex-col"
           >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.06] flex-none">
@@ -264,6 +263,13 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
             ✕
           </button>
         </div>
+      </div>
+
+      {/* Legend so the card colors are self-explanatory at a glance. */}
+      <div className="flex items-center gap-3 px-4 py-1.5 border-b border-white/[0.04] text-[10px] text-zinc-500 flex-none">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-300" /> New</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-300" /> On timeline</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm border border-white/40" /> Current take</span>
       </div>
 
       {(uploadedItems.length > 0 || uploadsLoading) && (
@@ -319,7 +325,7 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
           Each shot column = active version (large) + older versions (small chips). */}
       <div className="flex-1 overflow-auto px-4 py-3">
         {activeScene && hasAnyRendered ? (
-          <div className="flex items-start gap-4">
+          <div className="flex flex-wrap items-start gap-3">
             {activeScene.shots.map((shot, idx) => (
               <ShotColumn
                 key={shot.id}
