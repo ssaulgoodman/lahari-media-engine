@@ -320,6 +320,7 @@ const generateVideoInputSchema = z.object({
   projectId,
   shotId,
   dryRun: z.boolean().optional(),
+  dryRunSummary: z.boolean().optional(),
   promptOverride: optionalPromptText,
   modelOverride: modelOverrideSchema,
   nativeAudioMode: z.enum(['auto', 'off', 'on']).optional(),
@@ -1179,6 +1180,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
           nativeAudioMode: input.nativeAudioMode,
           recipeSlots: input.recipeSlots,
           contextOverrides: input.contextOverrides,
+          dryRunSummary: input.dryRunSummary,
         })
         : studio.applyGenerateVideo(project, input.shotId, input.promptOverride, input.modelOverride || {}, {
           acknowledgePreviousChargeRisk: input.acknowledgePreviousChargeRisk,

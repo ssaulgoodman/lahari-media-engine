@@ -1457,6 +1457,39 @@ export type VideoContextOverrides = {
   includePreviousStoryboard?: boolean;
 };
 
+const summarizeVideoCompositionForDryRun = (composition: any) => {
+  if (!composition || typeof composition !== 'object') return null;
+  const segments = Array.isArray(composition.segments)
+    ? composition.segments.map((segment: any) => ({
+      slot: typeof segment.slot === 'string' ? segment.slot : null,
+      label: segment.label || segment.slot || 'Segment',
+      included: segment.included !== false,
+      source: typeof segment.source === 'string' ? segment.source : null,
+      editPath: typeof segment.editPath === 'string' ? segment.editPath : null,
+      textLength: typeof segment.text === 'string' ? segment.text.length : 0,
+    }))
+    : [];
+  const images = Array.isArray(composition.images)
+    ? composition.images.map((image: any) => ({
+      ref: typeof image.ref === 'string' ? image.ref : null,
+      role: image.role || image.label || null,
+      assetId: image.assetId || null,
+      source: image.source || null,
+      included: image.included !== false,
+    }))
+    : [];
+  return {
+    kind: composition.kind || 'mirage.video_prompt_composition',
+    mode: composition.mode || 'storyboard',
+    textLength: typeof composition.text === 'string' ? composition.text.length : 0,
+    includedSegments: segments.filter((segment: any) => segment.included).length,
+    excludedSegments: segments.filter((segment: any) => !segment.included).length,
+    segments,
+    images,
+    params: composition.params && typeof composition.params === 'object' ? composition.params : {},
+  };
+};
+
 // dryRun preview: build the exact composition that WOULD be sent, decomposed by
 // source + edit path, without spending or side effects. Pairs the cheap
 // prerequisites/cost plan with the full composition.
@@ -1464,7 +1497,7 @@ export const previewGenerateVideo = async (
   project: Project,
   shotId: string,
   modelOverride: ModelOverride = {},
-  opts: { promptOverride?: string; nativeAudioMode?: 'auto' | 'off' | 'on'; recipeSlots?: Record<string, string>; contextOverrides?: VideoContextOverrides } = {},
+  opts: { promptOverride?: string; nativeAudioMode?: 'auto' | 'off' | 'on'; recipeSlots?: Record<string, string>; contextOverrides?: VideoContextOverrides; dryRunSummary?: boolean } = {},
 ) => {
   const plan = planGenerateVideo(project, shotId, modelOverride);
   let composition: unknown = null;
@@ -1493,11 +1526,14 @@ export const previewGenerateVideo = async (
   }
   return {
     ...plan,
-    prompt,
-    composition,
+    prompt: opts.dryRunSummary ? null : prompt,
+    composition: opts.dryRunSummary ? summarizeVideoCompositionForDryRun(composition) : composition,
+    compositionDetail: opts.dryRunSummary ? 'summary' : 'full',
     compositionError,
     compositionNote: composition
-      ? 'Exactly what would be sent, decomposed by source + edit path. Edit the named source or pass contextOverrides (e.g. includeShotBeat=false) to change a slot, then re-run dryRun.'
+      ? opts.dryRunSummary
+        ? 'Summary only: segment/source/edit-path anatomy without the full final prompt. Re-run dryRun without dryRunSummary or use describe_prompt for exact text.'
+        : 'Exactly what would be sent, decomposed by source + edit path. Edit the named source or pass contextOverrides (e.g. includeShotBeat=false) to change a slot, then re-run dryRun.'
       : compositionError
         ? 'Composition preview failed; see compositionError. Fix the named missing/invalid input, then re-run dryRun before spending.'
       : plan.canRun

@@ -14,7 +14,7 @@ Start with `get_shot_context(projectId, shotId)` when available. It gives the sh
 - Is this **keyframe mode** or **storyboard mode**?
 - Is the board/frame good enough to animate?
 - Is the failure in script, refs, board/frame, motion wording, audio cue, or model?
-- Have you run `run_action(generate_video, { dryRun: true })` and inspected the prompt composition?
+- Have you run `run_action(generate_video, { dryRun: true, dryRunSummary: true })` for requirements/cost/segment anatomy? Pull the exact full prompt only when diagnosing.
 - Is there a project workflow recipe already applied for this format?
 
 Do not generate video to discover what a bad still already tells you.
@@ -51,7 +51,7 @@ Weak:
 
 - **Save keyframe motion text** -> `run_action(apply_video_prompt)`. It does not generate.
 - **Use an existing/native image as start frame** -> `run_action(import_keyframe_image)`.
-- **Check requirements/cost/prompt composition** -> `run_action(generate_video, { dryRun: true })`.
+- **Check requirements/cost/prompt composition** -> `run_action(generate_video, { dryRun: true, dryRunSummary: true })` for routine work; omit `dryRunSummary` when you need the exact full prompt body.
 - **Generate** -> `start_job(generate_video)` after approval.
 - **Previous provider outcome unknown/pending** -> do not retry until the artist acknowledges the risk; pass `acknowledgePreviousChargeRisk: true` only after that approval.
 - **One exact final prompt needed** -> use `promptOverride` on `generate_video`.
@@ -68,7 +68,7 @@ In storyboard mode, treat the locked board as a black-and-white sketch plan by d
 
 For `hf_music_video`, keep the final video prompt full-frame and music-led. When useful, pass `recipeSlots` such as `musicSection`, `beatTiming`, `choreography`, and `audioPolicy` on `generate_video`. The uploaded song remains the authoritative final audio; use source-audio lipsync only when a shot explicitly needs singing or mouth timing.
 
-In storyboard mode, dry-run returns the composed prompt as segments: `format`, `animation`, `beat`, `refs`, `cut_plan`, `audio`, and `guardrail`. Read those segments before paid generation when output quality is sensitive. The segment `source` tells where the text came from; `editPath` tells what action changes it. Prefer dropping a bad segment with `contextOverrides` for one call or `videoPromptSlots` for the saved shot default over hand-writing a full `promptOverride`.
+In storyboard mode, dry-run returns the composed prompt as segments: `format`, `animation`, `beat`, `refs`, `cut_plan`, `audio`, and `guardrail`. Use `dryRunSummary:true` first so you see included/excluded slots, refs, params, sources, and edit paths without loading the full body. Pull full text with a normal dry-run or `describe_prompt` only when output quality/debugging requires it. Prefer dropping a bad segment with `contextOverrides` for one call or `videoPromptSlots` for the saved shot default over hand-writing a full `promptOverride`.
 
 ## Repair Ladder
 

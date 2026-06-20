@@ -228,11 +228,12 @@ export const VIDEO_ACTION_SPECS = {
     surface: 'video',
     mutates: true,
     paid: true,
-    description: 'Generate the video clip for one shot. dryRun returns requirements, provider, cost, AND the composed prompt decomposed into segments (each with its source + the exact action that edits it) without spending — preview/audit before generating.',
+    description: 'Generate the video clip for one shot. dryRun returns requirements, provider, cost, and prompt composition without spending. Use dryRunSummary:true for routine pre-spend checks; omit it when you need the exact final prompt text.',
     input: {
       projectId: 'string',
       shotId: 'string',
       dryRun: 'optional boolean',
+      dryRunSummary: 'optional boolean; with dryRun, returns segment/source/image/params summary without the full final prompt body',
       promptOverride: 'optional exact final video prompt',
       modelOverride: 'optional videoModel override',
       nativeAudioMode: 'optional "auto" | "off" | "on"; use "off" for silent lipsync video when final audio will be overlaid in render',
@@ -241,6 +242,7 @@ export const VIDEO_ACTION_SPECS = {
       acknowledgePreviousChargeRisk: 'required true only after a prior video attempt has an unknown or pending provider outcome; retry may spend again',
     },
     examples: [
+      { projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true, dryRunSummary: true },
       { projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true },
       { projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true, contextOverrides: { includeShotBeat: true } },
       { projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true, contextOverrides: { includeEnvironmentRefs: ['env_uuid_a', 'env_uuid_b'] } },
