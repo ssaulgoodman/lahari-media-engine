@@ -15,7 +15,7 @@ import useTimelineEvents from './use-timeline-events';
 import { loadSnapshot, saveSnapshot, SnapshotPayload } from './persistence';
 import { getProjectTimeline } from '../../services/api';
 
-export type InitialClip = { src: string; name?: string; shotId?: string; muted?: boolean; durationMs?: number };
+export type InitialClip = { src: string; name?: string; shotId?: string; muted?: boolean; durationMs?: number; posterUrl?: string };
 export type TimelineCanvasSize = { width: number; height: number };
 
 const DEFAULT_CANVAS_SIZE: TimelineCanvasSize = { width: 1920, height: 1080 };
@@ -279,6 +279,7 @@ const reconcileSnapshotWithInitialClips = async <T extends {
             ...(existing.metadata || {}),
             ...(clip.name ? { displayName: clip.name } : {}),
             ...(clip.shotId ? { shotId: clip.shotId } : {}),
+            ...(clip.posterUrl ? { posterUrl: clip.posterUrl } : {}),
           },
           duration: isFiveSecondPlaceholder(existing) ? nextDur : existing.duration,
           trim: isFiveSecondPlaceholder(existing) ? { from: 0, to: nextDur } : existing.trim,
@@ -306,6 +307,7 @@ const reconcileSnapshotWithInitialClips = async <T extends {
         resourceId: itemId,
         ...(clip.name ? { displayName: clip.name } : {}),
         ...(clip.shotId ? { shotId: clip.shotId } : {}),
+        ...(clip.posterUrl ? { posterUrl: clip.posterUrl } : {}),
       },
       trackId: videoTrack.id,
       isMain: true,
@@ -835,6 +837,7 @@ const TimelineEditor: React.FC<Props> = ({
             resourceId: itemId,
             ...(clip.name ? { displayName: clip.name } : {}),
             ...(clip.shotId ? { shotId: clip.shotId } : {}),
+            ...(clip.posterUrl ? { posterUrl: clip.posterUrl } : {}),
           },
           trackId: videoTrackId,
           isMain: true,

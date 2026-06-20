@@ -35,14 +35,64 @@ const drawLabel = (obj: any, ctx: CanvasRenderingContext2D, fallback: string) =>
   ctx.restore();
 };
 
+const loadImage = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const img = document.createElement('img');
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('image load failed'));
+    img.src = url;
+  });
+
+// Video clips render a tiled poster filmstrip (the shot's start frame, supplied
+// via metadata.posterUrl) so artists can see what's in a clip. This is the
+// upstream designcombo *fallback* path — a single representative frame tiled —
+// which avoids per-frame WebCodecs extraction while still reading as a clip.
 export class Video extends Trimmable {
   static type = 'Video';
+  private poster: HTMLImageElement | null = null;
+
   constructor(props: any) {
     super(props);
     assignTrimmableProps(this, props);
+    (this as any).objectCaching = false;
+    this.loadPoster();
   }
+
+  private async loadPoster() {
+    const url = (this as any).metadata?.posterUrl as string | undefined;
+    if (!url) return;
+    try {
+      this.poster = await loadImage(url);
+      (this as any).canvas?.requestRenderAll();
+    } catch {
+      this.poster = null;
+    }
+  }
+
+  private drawThumbnails(ctx: CanvasRenderingContext2D) {
+    const img = this.poster;
+    if (!img || !img.width || !img.height) return;
+    const width = (this as any).width as number;
+    const height = (this as any).height as number;
+    const tileWidth = Math.max(8, height * (img.width / img.height));
+    ctx.save();
+    ctx.translate(-width / 2, -height / 2);
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
+    for (let x = 0; x < width; x += tileWidth) {
+      ctx.drawImage(img, x, 0, tileWidth, height);
+    }
+    // Dim the filmstrip so the label and selection border stay legible.
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+  }
+
   public _render(ctx: CanvasRenderingContext2D) {
     super._render(ctx);
+    this.drawThumbnails(ctx);
     drawLabel(this, ctx, 'video');
     this.updateSelected(ctx);
   }
