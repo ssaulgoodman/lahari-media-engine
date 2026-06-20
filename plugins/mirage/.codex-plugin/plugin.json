@@ -34,10 +34,8 @@
     "websiteURL": "https://mirage-platform-production-05ca.up.railway.app",
     "defaultPrompt": [
       "Check Mirage status and open my latest project",
-      "Open my latest Mirage project",
       "Make a Yapper clip from a saved persona",
-      "Start a new Mirage video from this idea",
-      "Refresh this Mirage workspace"
+      "Start a new Mirage video from this idea"
     ],
     "brandColor": "#101827",
     "composerIcon": "./assets/icon.svg",

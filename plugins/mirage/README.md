@@ -9,12 +9,12 @@ This plugin packages the Mirage MCP entrypoint and Mirage production skills so a
 - Remote Mirage MCP server declaration.
 - Mirage operator skill for connect/open/sync habits.
 - Node skills for concept, script, style, casting, sound, audio, storyboarding, and video.
-- Starter prompts for opening a project, creating a video, refreshing a workspace, and checking coherence.
+- Starter prompts for opening a project, creating a persona clip, and creating a new video.
 - Mirage icon and app metadata for the Codex plugin UI.
 
 ## Still Manual In This Beta
 
-- Authentication is OAuth-first: install the plugin, add the MCP server URL, then run `codex mcp login mirage`. Mirage `/connect` handles the browser approval.
+- Authentication is OAuth-first: install the plugin, then run `codex mcp login mirage`. Mirage `/connect` handles the browser approval.
 - Bearer-token setup from `/connect` remains a fallback for older clients that do not support MCP OAuth.
 - Project-file sync can use `mint_cli_token` from the connected MCP session. `mirage login` remains a CLI convenience for users who want `mirage sync <projectId>` to mint short-lived project tokens without asking MCP each time.
 - Workspace instructions are initialized once with `mirage init`; skills come from this plugin; action schemas come from live MCP.
@@ -28,13 +28,13 @@ From macOS with Codex Desktop:
 npm install -g @ssaulgoodman420/mirage-cli@0.1.12
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
-codex mcp remove mirage
-codex mcp add mirage --url https://mirage-platform-production-05ca.up.railway.app/mcp
 codex mcp login mirage
 codex mcp get mirage --json
 ```
 
-The login command opens Mirage `/connect` in the browser. Approve the request, then fully restart Codex and start a new thread in an empty Mirage workspace folder. Plugin skills and MCP config are loaded at session start.
+The plugin owns the Mirage MCP registration. Do not also add a separate global `codex mcp add mirage` entry; a global entry can shadow the plugin's OAuth registration and make new threads miss the Mirage tools. The login command opens Mirage `/connect` in the browser. Approve the request, then fully restart Codex and start a new thread in an empty Mirage workspace folder. Plugin skills and MCP config are loaded at session start.
+
+For clients that do not support plugin-owned OAuth MCP, use the bearer-token snippet from Mirage `/connect` as a fallback.
 
 The first useful prompt after install is:
 
