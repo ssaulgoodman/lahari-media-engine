@@ -140,6 +140,22 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
     return () => { cancelled = true; };
   }, [open, project.id]);
 
+  // Esc closes the drawer — it overlays the timeline, so a quick dismiss
+  // shouldn't require aiming for the × in the corner.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // setOpen is stable for our purposes; re-bind only on open toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const handleHideVersion = async (shotId: string, assetId: string) => {
     await hideShotVideoFromMediaLibrary(project.id, shotId, assetId);
     setHistoryByShot((prev) => {
