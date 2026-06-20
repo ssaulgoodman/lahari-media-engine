@@ -627,6 +627,16 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     }
   };
 
+  const handleUploadStartFrame = async (shotId: string, file: File) => {
+    if (!project) return;
+    try {
+      const p = await api.uploadStartFrame(project.id, shotId, file);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Upload start frame failed: ${err.message}`);
+    }
+  };
+
   const handleUploadStoryboardImage = async (shotId: string, file: File) => {
     if (!project) return;
     try {
@@ -1540,6 +1550,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                     onGenerateEndFrame={handleGenerateEndFrame}
                     onClearEndFrame={handleClearEndFrame}
                     onClearExtractedFrame={handleClearExtractedFrame}
+                    onUploadStartFrame={handleUploadStartFrame}
                     onUploadEndFrame={handleUploadEndFrame}
                     onUploadStoryboardImage={handleUploadStoryboardImage}
                     onRefineEndFramePrompt={handleRefineEndFramePrompt}

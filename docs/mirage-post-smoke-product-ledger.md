@@ -289,6 +289,10 @@ that stores a `shot_storyboard` asset, creates a `storyboard_versions` row with 
 provenance, makes it the active unlocked board, and marks video stale. The existing Lock button
 remains the explicit approval step.
 
+**Follow-up slice landed locally:** keyframe-mode shots can now upload a start frame as-is from
+Studio. The route stores a normal `shot_image` asset, sets `image_status=success`, marks video
+stale, and records uploaded-keyframe provenance; no provider call or prompt rewrite is involved.
+
 ### P4 — Shot-Scoped Agent Reads `[ready now]`
 
 **Goal:** Avoid using broad project packets for local shot decisions.
@@ -480,6 +484,9 @@ repeatable human/agent product surface.
 - 2026-06-18 · P3b landed locally · — · Studio can upload a native storyboard image as-is for a
   shot. The upload becomes the active storyboard version without a provider call and stays
   unlocked until the artist explicitly locks it.
+- 2026-06-20 · start-keyframe upload landed locally · — · Keyframe-mode shots can upload or
+  replace the start frame as-is in Studio. The upload becomes the active `shot_image`, preserves
+  provenance, and marks the shot video stale for review/regeneration.
 - 2026-06-18 · P3 backend composer landed locally · — · Storyboard image render prompts now
   persist a provenance-annotated composition object on storyboard version metadata and expose it
   through storyboard history.

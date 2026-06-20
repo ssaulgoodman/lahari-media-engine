@@ -100,6 +100,7 @@ interface ShotCardProps {
   onJumpToAudioPhase?: () => void;
   onOpenShotXray?: (shotId: string, shotLabel: string) => void;
   onClearExtractedFrame?: (shotId: string) => void | Promise<void>;
+  onUploadStartFrame?: (shotId: string, file: File) => void | Promise<void>;
   onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
   onUploadStoryboardImage?: (shotId: string, file: File) => void | Promise<void>;
   onUploadShotRef?: (shotId: string, file: File) => void | Promise<void>;
@@ -120,7 +121,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   onGenerateEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt,
   onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame,
   onRevertVideo, onUseAsPrevEnd, onClearEndFrame, onClearExtractedFrame,
-  onUploadEndFrame, onUploadStoryboardImage, onUploadShotRef, onDeleteShotRef, onSetProject, setModalImage,
+  onUploadStartFrame, onUploadEndFrame, onUploadStoryboardImage, onUploadShotRef, onDeleteShotRef, onSetProject, setModalImage,
   onJumpToAudioPhase,
   onOpenShotXray,
 }) => {
@@ -146,6 +147,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   const [shotContext, setShotContext] = useState<ShotContext | null>(null);
   const [shotContextLoading, setShotContextLoading] = useState(false);
   const [shotContextError, setShotContextError] = useState<string | null>(null);
+  const startFrameFileRef = useRef<HTMLInputElement>(null);
   const endFrameFileRef = useRef<HTMLInputElement>(null);
 
   const effectiveStudioMode = shot.workflowMode === 'storyboard' || shot.workflowMode === 'keyframe'
@@ -280,6 +282,19 @@ export const ShotCard: React.FC<ShotCardProps> = ({
     if (shotEnv?.referenceImageUrl) refLabels.push(`Maintain ${shotEnv.name} setting from reference`);
     if (refLabels.length) veoParts.push(refLabels.join('. '));
     return veoParts.join('. ');
+  };
+
+  const renderStartFrameUploadButton = (label = 'Upload') => {
+    if (!onUploadStartFrame || shot.locked) return null;
+    return (
+      <button
+        onClick={() => startFrameFileRef.current?.click()}
+        disabled={isGenerating}
+        className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-2.5 py-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {label}
+      </button>
+    );
   };
 
   return (
@@ -583,6 +598,11 @@ export const ShotCard: React.FC<ShotCardProps> = ({
                   <button onClick={() => onUseAsPrevEnd(shot.id)} className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors" title="Use this start frame as the previous shot's end keyframe.">← Use as prev shot's end</button>
                 </div>
               )}
+              {onUploadStartFrame && !shot.locked && (
+                <div className="absolute bottom-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                  {renderStartFrameUploadButton('Replace')}
+                </div>
+              )}
               {shot.imageUrl && <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in" />}
             </div>
             <div className="w-px bg-white/[0.06] flex-shrink-0" />
@@ -623,6 +643,11 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               {shotIdx > 0 && !scene.shots[shotIdx - 1]?.locked && onUseAsPrevEnd && modelSupportsLastFrame && (
                 <div className="absolute bottom-2 left-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
                   <button onClick={() => onUseAsPrevEnd(shot.id)} className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors" title="Use this start frame as the previous shot's end keyframe.">Use as prev end</button>
+                </div>
+              )}
+              {onUploadStartFrame && !shot.locked && (
+                <div className="absolute bottom-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                  {renderStartFrameUploadButton('Replace')}
                 </div>
               )}
               <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in" />
@@ -672,11 +697,17 @@ export const ShotCard: React.FC<ShotCardProps> = ({
                     <button onClick={() => onUseAsPrevEnd(shot.id)} className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors" title="Use this start frame as the previous shot's end keyframe.">Use as prev shot's end</button>
                   </div>
                 )}
+                {onUploadStartFrame && !shot.locked && (
+                  <div className="absolute bottom-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                    {renderStartFrameUploadButton('Replace')}
+                  </div>
+                )}
                 <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[480px] h-auto w-auto cursor-zoom-in" />
               </>
             ) : (
-              <div className="w-full min-h-[160px] flex items-center justify-center text-zinc-400">
-                <span className="text-xs">No start frame -- click "Frame" to generate</span>
+              <div className="w-full min-h-[160px] flex flex-col items-center justify-center gap-3 text-zinc-400">
+                <span className="text-xs">No start frame -- generate or upload one</span>
+                {renderStartFrameUploadButton('Upload')}
               </div>
             )}
           </div>
@@ -822,6 +853,13 @@ export const ShotCard: React.FC<ShotCardProps> = ({
         )}
       </div>
       </>}
+
+      {/* Hidden file input for start frame upload */}
+      <input ref={startFrameFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (file && onUploadStartFrame) onUploadStartFrame(shot.id, file);
+        if (startFrameFileRef.current) startFrameFileRef.current.value = '';
+      }} />
 
       {/* Hidden file input for end frame upload */}
       <input ref={endFrameFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => {

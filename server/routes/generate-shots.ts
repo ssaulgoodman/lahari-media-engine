@@ -1195,6 +1195,74 @@ router.post('/:id/shots/:shotId/clear-extracted-frame', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Upload a custom start keyframe
+router.post('/:id/shots/:shotId/upload-start-frame', upload.single('image'), async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  if (!req.file) return res.status(400).json({ error: 'Image file required' });
+  if (!String(req.file.mimetype || '').toLowerCase().startsWith('image/')) {
+    return res.status(400).json({ error: 'Start-frame upload requires an image file' });
+  }
+
+  try {
+    const shot = await selectOne('shots', { id: shotId });
+    if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+    const ext = imageExtFromMime(req.file.mimetype, req.file.originalname);
+    const filePath = await saveBuffer(req.file.buffer, 'images', ext);
+    const assetId = uuidv4();
+    const importedAt = new Date().toISOString();
+    const prompt = String(shot.visual_prompt || shot.direction || 'Uploaded start keyframe as-is').trim();
+
+    await insertRow('assets', {
+      id: assetId,
+      project_id: projectId,
+      shot_id: shotId,
+      category: 'shot_image',
+      file_path: filePath,
+      prompt,
+      metadata: JSON.stringify({
+        variant: 'studio_uploaded_keyframe_image',
+        importedAt,
+        importedBy: 'web',
+        originalName: req.file.originalname || null,
+        mimeType: req.file.mimetype || null,
+        bytes: req.file.size || null,
+      }),
+    });
+
+    await updateRows('shots', { id: shotId }, {
+      image_asset_id: assetId,
+      image_status: 'success',
+      video_status: 'stale',
+      user_feedback: 'Uploaded start keyframe as-is',
+      last_error: null,
+    });
+
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'keyframe_uploaded',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist uploaded a start keyframe as-is in the web studio.',
+      payload: {
+        assetId,
+        imageUrl: storageUrl(filePath),
+        originalName: req.file.originalname || null,
+        mimeType: req.file.mimetype || null,
+        bytes: req.file.size || null,
+      },
+    });
+
+    res.json(await getFullProject(projectId));
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Start-frame upload failed:`, err);
+    sendStructuredError(res, err);
+  }
+});
+
 // Upload a custom end frame
 router.post('/:id/shots/:shotId/upload-end-frame', upload.single('image'), async (req, res) => {
   const projectId = paramStr(req.params.id);

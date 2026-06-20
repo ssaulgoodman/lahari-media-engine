@@ -1003,6 +1003,13 @@ export const uploadEndFrame = async (projectId: string, shotId: string, file: Fi
   return handleResponse(res);
 };
 
+export const uploadStartFrame = async (projectId: string, shotId: string, file: File) => {
+  const form = new FormData();
+  form.append('image', file);
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/upload-start-frame`, { method: 'POST', body: form });
+  return handleResponse(res);
+};
+
 export const uploadStoryboardImage = async (projectId: string, shotId: string, file: File) => {
   const form = new FormData();
   form.append('image', file);
