@@ -46,7 +46,7 @@ const parseArgs = (argv) => {
         : command === 'auth'
           ? (projectId && !projectId.startsWith('-') ? argv.slice(2) : argv.slice(1))
       : argv.slice(2);
-  const opts = { command, projectId, cwd: process.cwd(), force: false, recoverLock: false };
+  const opts = { command, projectId, cwd: process.cwd(), force: false, recoverLock: false, syncProfile: 'full' };
   if ((command === 'status' || command === 'doctor' || command === 'init') && projectId?.startsWith('-')) {
     opts.projectId = undefined;
   }
@@ -73,6 +73,14 @@ const parseArgs = (argv) => {
       opts.force = true;
     } else if (arg === '--recover-lock') {
       opts.recoverLock = true;
+    } else if (arg === '--state') {
+      if (opts.syncProfile !== 'full') fail('conflicting_sync_profile', 'Use only one sync profile flag: --state or --payloads.');
+      opts.syncProfile = 'state';
+    } else if (arg === '--payloads') {
+      if (opts.syncProfile !== 'full') fail('conflicting_sync_profile', 'Use only one sync profile flag: --state or --payloads.');
+      opts.syncProfile = 'payloads';
+    } else if (arg === '--full') {
+      opts.syncProfile = 'full';
     } else if (arg === '--api-url') {
       opts.apiUrl = optionArgs[i + 1];
       i += 1;
@@ -102,7 +110,7 @@ Usage:
   mirage auth status [--api-url <url>]
   mirage logout
   mirage init [--cwd <dir>] [--force]
-  mirage sync <projectId> [--cwd <dir>] [--force] [--recover-lock] [--api-url <url>]
+  mirage sync <projectId> [--cwd <dir>] [--force] [--state|--payloads] [--recover-lock] [--api-url <url>]
   mirage status [projectId] [--cwd <dir>]
   mirage upload-cast-reference <projectId> <castMemberId> <imagePath> [--note <text>] [--api-url <url>]
   mirage upload-environment-reference <projectId> <environmentId> <imagePath> [--note <text>] [--api-url <url>]
@@ -119,6 +127,7 @@ Notes:
   sync mints a short-lived project token automatically after login.
   init writes token-free workspace instructions once.
   sync refreshes project files only and automatically recovers dead-owner locks.
+  use --state for fast read-only snapshots; use --payloads for composed prompt receipts only.
   Use --recover-lock only after confirming another sync is not actively running.
 `;
 
@@ -135,7 +144,7 @@ Mirage server state is canonical. Local files are for reading, drafting, review,
 1. Confirm Mirage MCP is connected.
 2. Call \`mirage_doctor\` on first contact.
 3. Choose or create one project with \`list_projects\`, \`open_project\`, or \`create_project\`.
-4. If project files are missing or stale, run \`mirage sync <projectId>\` from this folder. If the CLI is not logged in, run \`mirage login\` with the token from Mirage \`/connect\`.
+4. If project files are missing or stale, run \`mirage sync <projectId>\` from this folder. Use \`mirage sync <projectId> --state\` for fast read-only snapshots after actions/jobs, or \`mirage sync <projectId> --payloads\` when you only need composed prompt receipts. If the CLI is not logged in, run \`mirage login\` with the token from Mirage \`/connect\`.
 5. Use synced files for long bodies and traces. Use MCP for live state and actions.
 
 ## Tools
@@ -157,7 +166,7 @@ Action schemas are live in MCP. Do not expect local \`config/actions/*\` files i
 - Native storyboard image: upload with \`purpose=storyboard_image\`, then \`run_action(import_storyboard_image)\`.
 - Repeatable formats: use \`run_action(list_workflows)\`, then \`run_action(apply_project_workflow)\` to apply one such as Yapper.
 - Saved personas: when the artist says "make a <persona> clip about <topic>" or "run Padma/Yapper," call \`list_personas\`, then \`create_project_from_persona\` with the persona and topic. Personas own reusable identity; workflow recipes own the production format.
-- Video: dry-run first with \`run_action(generate_video, { dryRun: true })\`, then \`start_job(generate_video)\` after approval.
+- Video: dry-run first with \`run_action(generate_video, { dryRun: true, dryRunSummary: true })\`, then \`start_job(generate_video)\` after approval.
 - Audio: use \`apply_audio_plan\`, \`apply_cast_voice\`, and \`generate_dialogue_audio\` when producing dialogue/narration.
 
 ## Choosing The Lever
@@ -175,6 +184,12 @@ Do not solve every problem by regenerating. Use the smallest lever that addresse
 Reference language should stay clean. The renderer receives attached images with explicit roles; prompt text should use graph names and object roles, not long wardrobe/style re-descriptions.
 
 ## Files
+
+Sync profiles:
+
+- \`mirage sync <projectId>\` — full workbench: editable drafts, config, state snapshots, generation traces, prompt payloads, notebook metadata, and journal create-if-missing.
+- \`mirage sync <projectId> --state\` — fast read-only refresh: \`state/\`, \`state/payloads/\`, and \`notebook.json\`.
+- \`mirage sync <projectId> --payloads\` — narrow prompt-audit refresh: \`state/payloads/\` and \`notebook.json\` only.
 
 Project files live under \`mirage/projects/<projectId>/\`:
 
@@ -350,6 +365,22 @@ const summarizeSyncForOperator = (manifest, written, skipped) => {
     sessionReloadReason: null,
     userAction: 'Project files are synced. No fresh chat is needed from project sync; update/restart only after installing or updating the Mirage plugin.',
   };
+};
+
+const syncProfileLabel = (profile) => {
+  if (profile === 'state') return 'state snapshots';
+  if (profile === 'payloads') return 'prompt payload receipts';
+  return 'full workbench';
+};
+
+const pathMatchesSyncProfile = (projectId, profile, relativePath) => {
+  if (profile === 'full') return true;
+  const baseDir = `mirage/projects/${projectId}`;
+  if (!relativePath.startsWith(`${baseDir}/`)) return false;
+  if (relativePath === `${baseDir}/notebook.json`) return true;
+  if (profile === 'payloads') return relativePath.startsWith(`${baseDir}/state/payloads/`);
+  if (profile === 'state') return relativePath.startsWith(`${baseDir}/state/`);
+  return true;
 };
 
 const lockTtlMs = () => {
@@ -639,7 +670,7 @@ const postNotebookSync = async (opts, knownHashes) => {
       'x-mirage-cli-version': pkg.version,
       'x-mirage-cli-auth-source': auth.source,
     },
-    body: JSON.stringify({ knownHashes }),
+    body: JSON.stringify({ knownHashes, syncProfile: opts.syncProfile || 'full' }),
   });
   const json = await response.json().catch(() => null);
   if (!response.ok || json?.ok === false) {
@@ -953,6 +984,8 @@ const status = async (opts) => {
 const sync = async (opts) => {
   if (!opts.projectId) fail('missing_project_id', 'Usage: mirage sync <projectId>');
   const workspace = path.resolve(opts.cwd);
+  const syncProfile = opts.syncProfile || 'full';
+  const partialSync = syncProfile !== 'full';
   const statePath = safeJoin(workspace, `mirage/projects/${opts.projectId}/${STATE_FILE}`);
   const workspaceStatePath = safeJoin(workspace, WORKSPACE_STATE_FILE);
   let releaseWorkspaceLock = null;
@@ -982,10 +1015,16 @@ const sync = async (opts) => {
 
   const remote = await postNotebookSync(opts, knownHashes);
   const remoteManifest = remote.manifest || [];
-  const manifest = remoteManifest.filter((entry) => (entry.scope || 'project') !== 'workspace');
+  const manifest = remoteManifest.filter((entry) => (
+    (entry.scope || 'project') !== 'workspace'
+    && pathMatchesSyncProfile(opts.projectId, syncProfile, entry.path)
+  ));
   const manifestByPath = new Map(manifest.map((entry) => [entry.path, entry]));
   const contentByPath = new Map((remote.files || [])
-    .filter((entry) => (entry.scope || 'project') !== 'workspace')
+    .filter((entry) => (
+      (entry.scope || 'project') !== 'workspace'
+      && pathMatchesSyncProfile(opts.projectId, syncProfile, entry.path)
+    ))
     .map((entry) => [entry.path, entry]));
   const written = [];
   const skipped = [];
@@ -1033,10 +1072,14 @@ const sync = async (opts) => {
   }
 
   const removedCandidates = new Set([
-    ...Object.keys(previousFiles).filter((filePath) => !manifestByPath.has(filePath)),
+    ...Object.keys(previousFiles).filter((filePath) => (
+      pathMatchesSyncProfile(opts.projectId, syncProfile, filePath) && !manifestByPath.has(filePath)
+    )),
     ...(remote.removedFiles || []).filter((filePath) => {
       const entry = remoteManifest.find((row) => row.path === filePath);
-      return (entry?.scope || 'project') !== 'workspace' && filePath.startsWith(`mirage/projects/${opts.projectId}/`);
+      return (entry?.scope || 'project') !== 'workspace'
+        && filePath.startsWith(`mirage/projects/${opts.projectId}/`)
+        && pathMatchesSyncProfile(opts.projectId, syncProfile, filePath);
     }),
   ]);
   for (const relativePath of removedCandidates) {
@@ -1053,27 +1096,31 @@ const sync = async (opts) => {
     removed.push({ path: relativePath });
   }
 
-  const legacyGeneratedPaths = [
-    `mirage/projects/${opts.projectId}/config/skills.json`,
-    `mirage/projects/${opts.projectId}/config/actions`,
-  ];
-  for (const relativePath of legacyGeneratedPaths) {
-    if (manifestByPath.has(relativePath)) continue;
-    const absolutePath = safeJoin(workspace, relativePath);
-    for (const filePath of collectFiles(absolutePath)) {
-      const fileRelativePath = normalizeSlash(path.relative(workspace, filePath));
-      if (manifestByPath.has(fileRelativePath)) continue;
-      fs.unlinkSync(filePath);
-      removeEmptyDirsUpTo(path.dirname(filePath), path.dirname(absolutePath));
-      pruned.push({ path: fileRelativePath, reason: 'old_project_scoped_workspace_file' });
-    }
-    if (fs.existsSync(absolutePath)) {
-      pruneTree(workspace, relativePath, 'old_project_scoped_workspace_file', pruned);
+  if (!partialSync) {
+    const legacyGeneratedPaths = [
+      `mirage/projects/${opts.projectId}/config/skills.json`,
+      `mirage/projects/${opts.projectId}/config/actions`,
+    ];
+    for (const relativePath of legacyGeneratedPaths) {
+      if (manifestByPath.has(relativePath)) continue;
+      const absolutePath = safeJoin(workspace, relativePath);
+      for (const filePath of collectFiles(absolutePath)) {
+        const fileRelativePath = normalizeSlash(path.relative(workspace, filePath));
+        if (manifestByPath.has(fileRelativePath)) continue;
+        fs.unlinkSync(filePath);
+        removeEmptyDirsUpTo(path.dirname(filePath), path.dirname(absolutePath));
+        pruned.push({ path: fileRelativePath, reason: 'old_project_scoped_workspace_file' });
+      }
+      if (fs.existsSync(absolutePath)) {
+        pruneTree(workspace, relativePath, 'old_project_scoped_workspace_file', pruned);
+      }
     }
   }
   pruneSyncLockArchives(workspace, opts.projectId, pruned);
 
-  const nextProjectFiles = {};
+  const nextProjectFiles = partialSync
+    ? Object.fromEntries(Object.entries(previousProjectFiles).filter(([filePath]) => !removedCandidates.has(filePath)))
+    : {};
   for (const entry of manifest) {
     if (conflicts.some((conflict) => conflict.path === entry.path)) {
       if (previousProjectFiles[entry.path]) nextProjectFiles[entry.path] = previousProjectFiles[entry.path];
@@ -1103,6 +1150,8 @@ const sync = async (opts) => {
     notebookVersion: remote.notebookVersion,
     project: remote.project,
     syncedAt: new Date().toISOString(),
+    lastSyncProfile: syncProfile,
+    partialSyncedAt: partialSync ? new Date().toISOString() : previousProjectState.partialSyncedAt || null,
     files: nextProjectFiles,
   }, null, 2)}\n`);
 
@@ -1110,6 +1159,7 @@ const sync = async (opts) => {
     ok: conflicts.length === 0,
     kind: 'mirage.cli.sync',
     projectId: opts.projectId,
+    syncProfile,
     notebookSchemaVersion: remote.notebookVersion,
     generatedAt: remote.generatedAt,
     skillsHash: remote.skillsHash,
@@ -1121,7 +1171,15 @@ const sync = async (opts) => {
     pruned: pruned.length,
     conflicted: conflicts.length,
     conflicts,
-    summary: summarizeSyncForOperator(manifest, written, skipped),
+    summary: {
+      ...summarizeSyncForOperator(manifest, written, skipped),
+      profile: {
+        key: syncProfile,
+        label: syncProfileLabel(syncProfile),
+        partial: partialSync,
+        preservedTrackedFiles: partialSync ? Object.keys(nextProjectFiles).filter((filePath) => !manifestByPath.has(filePath)).length : 0,
+      },
+    },
     details: {
       locks: lockReceipt,
       written,

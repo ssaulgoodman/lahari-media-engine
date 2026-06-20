@@ -20,7 +20,7 @@ Mirage server state is canonical. Local files are a workbench for reading, draft
 2. Call `mirage_doctor` on first contact or after a deploy.
 3. Identify one active project with the user request, `list_projects`, `open_project`, or `create_project`.
 4. If this folder does not have `AGENTS.md` / `CLAUDE.md`, run `mirage init` once. This is token-free.
-5. If project files are missing or stale, run `mirage sync <projectId>` from the workspace root. If the CLI is not logged in, run `mirage login` with the token from Mirage `/connect`; `mint_cli_token` is the one-off fallback.
+5. If project files are missing or stale, run `mirage sync <projectId>` from the workspace root. For fast debug after agent/Studio mutations, prefer `mirage sync <projectId> --state`; for prompt receipts only, use `mirage sync <projectId> --payloads`. If the CLI is not logged in, run `mirage login` with the token from Mirage `/connect`; `mint_cli_token` is the one-off fallback.
 6. Use synced files for long bodies and traces. Use MCP for live state and actions.
 
 ## Tools
@@ -94,6 +94,11 @@ Project sync is project-data only. It writes files under `mirage/projects/<proje
 
 Use `mirage login` once to store the account token locally, then run `mirage sync <projectId>` from the workspace root. The CLI mints short-lived project tokens internally. If the Mirage CLI is not installed, install/update it once without a live token. Use `mint_cli_token` only as a fallback when the login store is unavailable.
 
+Sync profiles:
+- `mirage sync <projectId>` — full workbench: editable drafts, config, state snapshots, generation traces, prompt payloads, notebook metadata, and journal create-if-missing.
+- `mirage sync <projectId> --state` — fast read-only refresh: `state/`, `state/payloads/`, and `notebook.json`. Use this after actions/jobs when you need fresh URLs, prompt receipts, statuses, or traces without touching editable drafts/config.
+- `mirage sync <projectId> --payloads` — narrow prompt-audit refresh: `state/payloads/` and `notebook.json` only. Use this after prompt debugging or a generation when exact composed storyboard/video payloads are the only missing local artifact.
+
 Use `get_project_notebook_manifest` + `read_project_notebook_file` only when the harness has no shell or local file-write capability. Do not use `detail='full'` just to fetch file bodies.
 
 Skills come from the installed Mirage plugin. If the plugin updates, open a fresh chat/session so Codex or Claude reloads skills. Project sync alone should not require a fresh chat.
@@ -140,7 +145,7 @@ Render happens in the web timeline. Point the artist to the web studio for final
 - Ask before paid generation, lock/unlock, replacing approved assets, prompt override changes, publishing, or script topology rebuilds.
 - Preserve downstream work. Once refs, boards, videos, or audio exist, prefer narrow edits that mark affected outputs stale instead of wiping them.
 - Use payloads and generation traces for debugging. Before guessing why a board or video drifted, read `state/payloads/`; for broader model-call history, read `state/generation-traces/`.
-- Sync after important mutations. Action receipts are compact; the local files become current after sync.
+- Sync after important mutations. Use `--state` for routine freshness and full sync only when editable drafts/config/handoff files need refreshing.
 - Capture product/tool bugs with `mirage_capture_issue`; keep the report concrete and short.
 
 Be concise and specific. Name the artifact, the issue, why it matters, and the next action.

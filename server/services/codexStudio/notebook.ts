@@ -40,6 +40,8 @@ export type NotebookFile = {
   description: string;
 };
 
+export type NotebookSyncProfile = 'full' | 'state' | 'payloads';
+
 const normalizedProjectDir = (project: Pick<Project, 'id'>) => `mirage/projects/${project.id}`;
 const MIRAGE_SKILL_NAMES = [
   'concept-writer',
@@ -51,7 +53,7 @@ const MIRAGE_SKILL_NAMES = [
   'storyboarding',
   'video-director',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-21.mcp-polish-v1';
+const NOTEBOOK_VERSION = '2026-06-20.sync-profiles-v1';
 
 type MirageSkillName = typeof MIRAGE_SKILL_NAMES[number];
 
@@ -79,6 +81,19 @@ type NotebookSkillsManifest = {
 };
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
+
+const normalizeNotebookSyncProfile = (profile?: string | null): NotebookSyncProfile => {
+  if (profile === 'state' || profile === 'payloads') return profile;
+  return 'full';
+};
+
+const notebookFileMatchesProfile = (profile: NotebookSyncProfile, file: Pick<NotebookFile, 'path' | 'mode'>, baseDir: string): boolean => {
+  if (profile === 'full') return true;
+  if (file.path === `${baseDir}/notebook.json`) return true;
+  if (profile === 'payloads') return file.path.startsWith(`${baseDir}/state/payloads/`);
+  if (profile === 'state') return file.mode === 'state' || file.path.startsWith(`${baseDir}/state/`);
+  return true;
+};
 
 const projectUpdatedAt = (project: Project) => project.updatedAt || project.createdAt || 'unknown';
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -993,17 +1008,23 @@ export const buildNotebookConfigArtifacts = async (
   return files;
 };
 
-export const buildProjectNotebook = async (project: Project) => {
+export const buildProjectNotebook = async (project: Project, opts: { syncProfile?: NotebookSyncProfile | string | null } = {}) => {
   const baseDir = normalizedProjectDir(project);
+  const syncProfile = normalizeNotebookSyncProfile(opts.syncProfile);
+  const includeDrafts = syncProfile === 'full';
+  const includeConfig = syncProfile === 'full';
+  const includeJournal = syncProfile === 'full';
+  const includeTraces = syncProfile === 'full' || syncProfile === 'state';
+  const includePayloads = syncProfile === 'full' || syncProfile === 'state' || syncProfile === 'payloads';
   const actions = buildProjectActionList(project);
-  const config = await getProjectConfigState(project);
+  const config = includeConfig ? await getProjectConfigState(project) : null;
   const skillResources = loadSkillResources();
   const skillsManifest = buildSkillsManifest(skillResources);
-  const generationTraceFiles = await buildGenerationTraceFiles(project);
-  const promptPayloadFiles = await buildPromptPayloadFiles(project);
+  const generationTraceFiles = includeTraces ? await buildGenerationTraceFiles(project) : [];
+  const promptPayloadFiles = includePayloads ? await buildPromptPayloadFiles(project) : [];
   const generatedAt = new Date().toISOString();
   const actionsHash = buildActionsHash();
-  const files: NotebookFile[] = [
+  const fullFiles: NotebookFile[] = [
     {
       path: `${baseDir}/state/brief.md`,
       mode: 'state',
@@ -1025,14 +1046,16 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Locked concept state snapshot.',
       content: buildConcept(project),
     },
-    {
-      path: `${baseDir}/script.md`,
-      mode: 'draft',
-      writePolicy: 'review_before_overwrite',
-      description: 'Editable script artifact. Use apply_text_edits for post-visual wording changes; use apply_script only for pre-visual scripts or topology rebuilds.',
-      content: buildScriptMarkdownDraft(project),
-    },
-    ...project.scenes.map((scene, sceneIndex) => buildStoryboardSceneDraftFile(project, sceneIndex, scene)),
+    ...(includeDrafts ? [
+      {
+        path: `${baseDir}/script.md`,
+        mode: 'draft' as const,
+        writePolicy: 'review_before_overwrite' as const,
+        description: 'Editable script artifact. Use apply_text_edits for post-visual wording changes; use apply_script only for pre-visual scripts or topology rebuilds.',
+        content: buildScriptMarkdownDraft(project),
+      },
+      ...project.scenes.map((scene, sceneIndex) => buildStoryboardSceneDraftFile(project, sceneIndex, scene)),
+    ] : []),
     {
       path: `${baseDir}/state/style.md`,
       mode: 'state',
@@ -1063,43 +1086,47 @@ export const buildProjectNotebook = async (project: Project) => {
     },
     ...generationTraceFiles,
     ...promptPayloadFiles,
-    {
-      path: `${baseDir}/audio-plan.md`,
-      mode: 'draft',
-      writePolicy: 'review_before_overwrite',
-      description: 'Editable audio plan artifact. Edit JSON per shot and apply with run_action(apply_audio_plan) using markdown.',
-      content: buildAudioPlanMarkdownDraft(project),
-    },
-    ...project.scenes.flatMap((scene, sceneIndex) => scene.shots.map((shot, shotIndex) => buildStoryboardFile(project, sceneIndex, shotIndex, shot))),
-    {
-      path: `${baseDir}/config/preferences.json`,
-      mode: 'config',
-      writePolicy: 'review_before_overwrite',
-      description: 'Editable project model preferences. Apply with apply_project_preferences.',
-      content: `${JSON.stringify(config.preferences.preferences, null, 2)}\n`,
-    },
-    {
-      path: `${baseDir}/config/style-notes.json`,
-      mode: 'config',
-      writePolicy: 'review_before_overwrite',
-      description: 'Editable per-surface project style notes. Apply with apply_project_style_notes.',
-      content: `${JSON.stringify(config.styleNotes.styleNotes, null, 2)}\n`,
-    },
-    buildPromptOverridesReadme(baseDir),
-    ...PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => ({
-      path: `${baseDir}/config/prompts/${kind}.md`,
-      mode: 'config' as const,
-      writePolicy: 'review_before_overwrite' as const,
-      description: `Editable project ${kind} prompt recipe. Apply with apply_project_prompt_override(kind="${kind}").`,
-      content: ensureNewline(config.prompts[kind].body),
-    })),
-    {
-      path: `${baseDir}/config/hashes.json`,
-      mode: 'config',
-      writePolicy: 'overwrite',
-      description: 'Base hashes for drift-aware apply tools.',
-      content: `${JSON.stringify(await buildHashes(project), null, 2)}\n`,
-    },
+    ...(includeDrafts ? [
+      {
+        path: `${baseDir}/audio-plan.md`,
+        mode: 'draft' as const,
+        writePolicy: 'review_before_overwrite' as const,
+        description: 'Editable audio plan artifact. Edit JSON per shot and apply with run_action(apply_audio_plan) using markdown.',
+        content: buildAudioPlanMarkdownDraft(project),
+      },
+      ...project.scenes.flatMap((scene, sceneIndex) => scene.shots.map((shot, shotIndex) => buildStoryboardFile(project, sceneIndex, shotIndex, shot))),
+    ] : []),
+    ...(includeConfig && config ? [
+      {
+        path: `${baseDir}/config/preferences.json`,
+        mode: 'config' as const,
+        writePolicy: 'review_before_overwrite' as const,
+        description: 'Editable project model preferences. Apply with apply_project_preferences.',
+        content: `${JSON.stringify(config.preferences.preferences, null, 2)}\n`,
+      },
+      {
+        path: `${baseDir}/config/style-notes.json`,
+        mode: 'config' as const,
+        writePolicy: 'review_before_overwrite' as const,
+        description: 'Editable per-surface project style notes. Apply with apply_project_style_notes.',
+        content: `${JSON.stringify(config.styleNotes.styleNotes, null, 2)}\n`,
+      },
+      buildPromptOverridesReadme(baseDir),
+      ...PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => ({
+        path: `${baseDir}/config/prompts/${kind}.md`,
+        mode: 'config' as const,
+        writePolicy: 'review_before_overwrite' as const,
+        description: `Editable project ${kind} prompt recipe. Apply with apply_project_prompt_override(kind="${kind}").`,
+        content: ensureNewline(config.prompts[kind].body),
+      })),
+      {
+        path: `${baseDir}/config/hashes.json`,
+        mode: 'config' as const,
+        writePolicy: 'overwrite' as const,
+        description: 'Base hashes for drift-aware apply tools.',
+        content: `${JSON.stringify(await buildHashes(project), null, 2)}\n`,
+      },
+    ] : []),
     {
       path: `${baseDir}/notebook.json`,
       mode: 'state',
@@ -1107,12 +1134,13 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Machine-readable notebook metadata, including notebookVersion and skillsHash for stale-workspace checks.',
       content: `${JSON.stringify(buildNotebookMeta(project, actions, skillsManifest), null, 2)}\n`,
     },
-    {
-      path: `${baseDir}/journal.md`,
-      mode: 'journal',
-      writePolicy: 'create_if_missing',
-      description: 'Local operator journal. Append notes here; do not overwrite unless intentionally resetting the notebook.',
-      content: `# Mirage Journal
+    ...(includeJournal ? [
+      {
+        path: `${baseDir}/journal.md`,
+        mode: 'journal' as const,
+        writePolicy: 'create_if_missing' as const,
+        description: 'Local operator journal. Append notes here; do not overwrite unless intentionally resetting the notebook.',
+        content: `# Mirage Journal
 
 Project: ${project.title}
 Project ID: ${project.id}
@@ -1121,12 +1149,15 @@ Project ID: ${project.id}
 
 Opened project and wrote the initial local notebook.
 `,
-    },
+      },
+    ] : []),
   ];
+  const files = fullFiles.filter((file) => notebookFileMatchesProfile(syncProfile, file, baseDir));
 
   return {
     kind: 'mirage.project.notebook',
     notebookVersion: NOTEBOOK_VERSION,
+    syncProfile,
     generatedAt,
     actionsHash,
     skillsHash: skillsManifest.version,
@@ -1137,6 +1168,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific sync command so file bodies do not travel through chat; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell capability. If using this full payload manually, write each file to its path relative to the current workspace. Project files live under mirage/projects/<projectId>/ (state/, script.md, audio-plan.md, storyboards/, config/style-notes.json, config/preferences.json, config/prompts/, hashes.json, notebook.json, journal.md). Payload audit files live under state/payloads/ and are read-only debug artifacts for exact generated storyboard/video prompt composition. Create journal.md only if missing. Before overwriting editable artifacts or a project config/ file, check whether it has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and project config files are editable overrides. Apply post-visual wording edits with run_action(apply_text_edits); use run_action(add_shot/delete_shot) for one-shot insert/delete inside an existing scene; use run_action(apply_script) only for pre-visual scripts or broad topology rebuilds. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. Workspace operating files are not part of project notebook sync: Mirage skills come from the plugin, action schemas come from live MCP list_actions/describe_action, and AGENTS.md/CLAUDE.md are initialized separately with mirage init. Append concise decisions to the project journal.md.',
+    writeInstructions: 'Last fallback path only. Prefer logged-in `mirage sync <projectId>` so file bodies do not travel through chat; use `mirage sync <projectId> --state` for routine read-only snapshots/payloads and `mirage sync <projectId> --payloads` for composed prompt receipts only. Use mint_cli_token + the returned shell-specific sync command only when the login store is unavailable; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell capability. If using this full payload manually, write each file to its path relative to the current workspace. Project files live under mirage/projects/<projectId>/ (state/, script.md, audio-plan.md, storyboards/, config/style-notes.json, config/preferences.json, config/prompts/, hashes.json, notebook.json, journal.md). Payload audit files live under state/payloads/ and are read-only debug artifacts for exact generated storyboard/video prompt composition. Create journal.md only if missing. Before overwriting editable artifacts or a project config/ file, check whether it has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and project config files are editable overrides. Apply post-visual wording edits with run_action(apply_text_edits); use run_action(add_shot/delete_shot) for one-shot insert/delete inside an existing scene; use run_action(apply_script) only for pre-visual scripts or broad topology rebuilds. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. Workspace operating files are not part of project notebook sync: Mirage skills come from the plugin, action schemas come from live MCP list_actions/describe_action, and AGENTS.md/CLAUDE.md are initialized separately with mirage init. Append concise decisions to the project journal.md.',
   };
 };

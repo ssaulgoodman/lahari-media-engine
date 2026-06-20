@@ -16,7 +16,7 @@ This plugin packages the Mirage MCP entrypoint and Mirage production skills so a
 
 - Authentication is OAuth-first: install the plugin, then run `codex mcp login mirage`. Mirage `/connect` handles the browser approval.
 - Bearer-token setup from `/connect` remains a fallback for older clients that do not support MCP OAuth.
-- Project-file sync can use `mint_cli_token` from the connected MCP session. `mirage login` remains a CLI convenience for users who want `mirage sync <projectId>` to mint short-lived project tokens without asking MCP each time.
+- Project-file sync should use `mirage login` once, then `mirage sync <projectId>`. Use `mirage sync <projectId> --state` for fast read-only snapshots/payloads, `mirage sync <projectId> --payloads` for prompt receipts only, and `mint_cli_token` only as the fallback when the CLI login store is unavailable.
 - Workspace instructions are initialized once with `mirage init`; skills come from this plugin; action schemas come from live MCP.
 - A future plugin/local bridge should own sync and uploads directly instead of asking the agent to reason about shell commands.
 
@@ -25,7 +25,7 @@ This plugin packages the Mirage MCP entrypoint and Mirage production skills so a
 From macOS with Codex Desktop:
 
 ```bash
-npm install -g @ssaulgoodman420/mirage-cli@0.1.12
+npm install -g @ssaulgoodman420/mirage-cli@0.1.13
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
 codex mcp login mirage

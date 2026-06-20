@@ -10,6 +10,21 @@ const router = Router();
 
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
+type NotebookSyncProfile = 'full' | 'state' | 'payloads';
+
+const normalizeSyncProfile = (value: unknown): NotebookSyncProfile => (
+  value === 'state' || value === 'payloads' ? value : 'full'
+);
+
+const pathMatchesSyncProfile = (projectId: string, profile: NotebookSyncProfile, filePath: string) => {
+  if (profile === 'full') return true;
+  const baseDir = `mirage/projects/${projectId}`;
+  if (!filePath.startsWith(`${baseDir}/`)) return false;
+  if (filePath === `${baseDir}/notebook.json`) return true;
+  if (profile === 'payloads') return filePath.startsWith(`${baseDir}/state/payloads/`);
+  return filePath.startsWith(`${baseDir}/state/`);
+};
+
 const bearerToken = (header?: string | null) => {
   const match = (header || '').match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || null;
@@ -112,7 +127,8 @@ router.post('/projects/:projectId/notebook', async (req, res) => {
     const knownHashes = req.body?.knownHashes && typeof req.body.knownHashes === 'object'
       ? req.body.knownHashes as Record<string, string>
       : {};
-    const notebook = await buildProjectNotebook(await getFullProject(projectId));
+    const syncProfile = normalizeSyncProfile(req.body?.syncProfile);
+    const notebook = await buildProjectNotebook(await getFullProject(projectId), { syncProfile });
     const manifest = notebook.files.map((file) => {
       const hash = sha256(file.content);
       return {
@@ -131,12 +147,15 @@ router.post('/projects/:projectId/notebook', async (req, res) => {
         : [{ ...manifest[index], content: file.content }]
     ));
     const manifestPaths = new Set(manifest.map((file) => file.path));
-    const removedFiles = Object.keys(knownHashes).filter((filePath) => !manifestPaths.has(filePath));
+    const removedFiles = Object.keys(knownHashes).filter((filePath) => (
+      pathMatchesSyncProfile(projectId, syncProfile, filePath) && !manifestPaths.has(filePath)
+    ));
 
     return res.json({
       ok: true,
       data: {
         kind: 'mirage.notebook.sync',
+        syncProfile,
         notebookVersion: notebook.notebookVersion,
         generatedAt: notebook.generatedAt,
         actionsHash: notebook.actionsHash,
