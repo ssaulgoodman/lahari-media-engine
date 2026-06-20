@@ -17,6 +17,7 @@
  * dominant workflow ("place playhead, pick clip, click").
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ApiProject, VideoScene, VideoShot } from '../types';
 import {
   getShotHistory,
@@ -181,28 +182,36 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
     setUploadedItems((cur) => cur.filter((item) => item.assetId !== assetId));
   };
 
-  // ─── Closed state: just the handle ──────────────────────────────────────
-  if (!open) {
-    if (hideClosedHandle) return null;
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1 rounded-t-md bg-[#1a1a1e] border border-white/[0.08] border-b-0 text-[11px] text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5"
-        title="Open media library"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-          <polyline points="3 8 21 8"/>
-        </svg>
-        Media Library
-      </button>
-    );
-  }
-
-  // ─── Open state: full drawer ────────────────────────────────────────────
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-20 bg-[#1a1a1e]/95 border-t border-white/[0.08] backdrop-blur-sm flex flex-col" style={{ height: 280 }}>
+    <>
+      {!open && !hideClosedHandle && (
+        <motion.button
+          type="button"
+          onClick={() => setOpen(true)}
+          initial={{ y: 8, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.16, ease: 'easeOut' }}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1 rounded-t-md bg-[#1a1a1e] border border-white/[0.08] border-b-0 text-[11px] text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5"
+          title="Open media library"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <polyline points="3 8 21 8"/>
+          </svg>
+          Media Library
+        </motion.button>
+      )}
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ y: 280, opacity: 0.72 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 280, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute bottom-0 left-0 right-0 z-20 bg-[#1a1a1e]/95 border-t border-white/[0.08] backdrop-blur-sm flex flex-col"
+            style={{ height: 280 }}
+          >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.06] flex-none">
         <div className="flex items-center gap-3">
@@ -316,7 +325,10 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
           </div>
         )}
       </div>
-    </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 

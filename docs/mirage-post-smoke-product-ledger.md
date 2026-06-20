@@ -525,6 +525,9 @@ repeatable human/agent product surface.
 - 2026-06-20 · render preflight eligibility landed locally · — · Render now previews likely
   FFmpeg fast path versus Remotion fallback with the first visible reason before the artist
   starts a render. The renderer remains authoritative once the job stages assets.
+- 2026-06-20 · media library drawer motion landed locally · — · Render's media drawer now
+  opens/closes with a short eased transition instead of snapping between the handle and full
+  panel, preserving the same library data/loading behavior.
 - 2026-06-20 · legibility lane scoped down after grounding · — · Audited current state before
   starting buckets 2 (storyboard composer maturity) + 3 (self-explaining shot state). Finding:
   the BACKENDS for both largely already exist from the landed slices, so neither is a build from
