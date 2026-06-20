@@ -6,7 +6,23 @@ import StateManager, {
 } from '@designcombo/state';
 import { generateId } from '@designcombo/timeline';
 import { getFitZoomLevel } from './utils';
-import { Library, Upload, Sparkles } from 'lucide-react';
+import { Library, Upload, Sparkles, Keyboard } from 'lucide-react';
+
+// Single source of truth for the cheat sheet + a reminder to keep it in sync
+// with the onKey handler below.
+const TIMELINE_SHORTCUTS: Array<[string, string]> = [
+  ['Space', 'Play / pause'],
+  ['← / →', 'Step one frame'],
+  ['Shift + ← / →', 'Jump one second'],
+  ['Home / End', 'Go to start / end'],
+  ['M', 'Toggle marker at playhead'],
+  [', / .', 'Previous / next marker'],
+  ['S', 'Split clip at playhead'],
+  ['Delete / Backspace', 'Delete selected clip(s)'],
+  ['⌘/Ctrl + Z', 'Undo'],
+  ['⌘/Ctrl + Shift + Z', 'Redo'],
+  ['?', 'Toggle this help'],
+];
 import Player from './Player';
 import Timeline from './Timeline';
 import EffectsPanel from './EffectsPanel';
@@ -389,6 +405,7 @@ const TimelineEditor: React.FC<Props> = ({
   }, [projectId]);
 
   const [sidePanel, setSidePanel] = useState<'effects' | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   useTimelineEvents();
 
   // Gate auto-save until after the seed effect has finished committing. Seeds
@@ -1031,6 +1048,17 @@ const TimelineEditor: React.FC<Props> = ({
       // commands instead of the focused control.
       if (isKeyboardControlTarget(e.target)) return;
 
+      // ? toggles the shortcut cheat sheet; Escape closes it.
+      if (e.key === '?') {
+        setShowShortcuts((v) => !v);
+        e.preventDefault();
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowShortcuts(false);
+        return;
+      }
+
       const mod = e.metaKey || e.ctrlKey;
       if (mod && (e.key === 'z' || e.key === 'Z')) {
         const { performUndo, performRedo } = useStore.getState();
@@ -1143,6 +1171,7 @@ const TimelineEditor: React.FC<Props> = ({
   return (
     <div
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         height: embedded ? '100%' : '100vh',
@@ -1246,6 +1275,13 @@ const TimelineEditor: React.FC<Props> = ({
           >
             <Sparkles size={16} />
           </button>
+          <button
+            style={sidebarBtn(showShortcuts)}
+            onClick={() => setShowShortcuts((v) => !v)}
+            title="Keyboard shortcuts (?)"
+          >
+            <Keyboard size={16} />
+          </button>
         </div>
 
         {/* Viewer — fills all remaining horizontal space */}
@@ -1266,6 +1302,65 @@ const TimelineEditor: React.FC<Props> = ({
 
       {/* Full-width timeline below */}
       {playerRef && stateManager && <Timeline />}
+
+      {showShortcuts && (
+        <div
+          onClick={() => setShowShortcuts(false)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 360,
+              maxWidth: '90%',
+              background: '#161620',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 12,
+              padding: 18,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#f4f4f5' }}>Keyboard shortcuts</span>
+              <button
+                onClick={() => setShowShortcuts(false)}
+                style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: 13 }}
+              >
+                Esc
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {TIMELINE_SHORTCUTS.map(([keys, label]) => (
+                <div key={keys} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: 12, color: '#d4d4d8' }}>{label}</span>
+                  <kbd
+                    style={{
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: '#e4e4e7',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 5,
+                      padding: '2px 7px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {keys}
+                  </kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
