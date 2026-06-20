@@ -70,6 +70,12 @@ For `hf_music_video`, keep the final video prompt full-frame and music-led. When
 
 In storyboard mode, dry-run returns the composed prompt as segments: `format`, `animation`, `beat`, `refs`, `cut_plan`, `audio`, and `guardrail`. Use `dryRunSummary:true` first so you see included/excluded slots, refs, params, sources, and edit paths without loading the full body. Pull full text with a normal dry-run or `describe_prompt` only when output quality/debugging requires it. Prefer dropping a bad segment with `contextOverrides` for one call or `videoPromptSlots` for the saved shot default over hand-writing a full `promptOverride`.
 
+## Native Audit Workers
+
+Use a Codex/Claude native subagent or background worker for bounded video-adjacent audits that would bloat the main director context: continuity checks across a scene, payload contradiction checks, candidate/reroll triage, or editor-handoff packaging. Mirage does not coordinate these workers; the harness does.
+
+Give the worker a narrow packet: target shots/assets, exact question, payload summaries or selected `describe_prompt` output, preserve constraints, forbidden writes/spend, and expected receipt. The worker should return findings and suggested next Mirage actions only. The main director remains responsible for dry-runs, paid `start_job` calls, imports, locks, and persisted edits.
+
 ## Repair Ladder
 
 1. **Motion wording wrong** -> edit motion prompt.

@@ -179,6 +179,7 @@ Do not solve every problem by regenerating. Use the smallest lever that addresse
 - Use style notes for reusable taste or model phrasing.
 - Use image edit/refine when the asset is mostly right. Regenerate when staging, premise, panel structure, or reference use is wrong.
 - Use native imagegen plus \`import_storyboard_image\` when outside image work beats Mirage generation.
+- Use Codex/Claude native subagents or background workers for bounded off-thread work when it protects the main director context: imagegen repairs, visual triage, continuity checks, prompt-payload audits, or export packaging. Mirage does not coordinate those workers. Give the worker a narrow packet (target shot/asset, exact issue, preserve constraints, allowed tools, expected receipt), then have it return a compact receipt (output path/asset, prompt or checks run, changes made, caveats). The main director stays responsible for artist approval, paid actions, uploads/imports, locks, and all Mirage state writes.
 - Add extra uploaded refs for unusual shot needs such as a painting, product, logo, prop, or special environment detail.
 
 Reference language should stay clean. The renderer receives attached images with explicit roles; prompt text should use graph names and object roles, not long wardrobe/style re-descriptions.

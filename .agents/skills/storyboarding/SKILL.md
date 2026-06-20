@@ -68,6 +68,14 @@ Before locking, check whether the board actually stages the shot:
 6. **Native or artist image is better** → upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
 7. **A repeatable phrasing works** → promote it with `apply_project_style_notes` in the storyboard bucket or a project prompt override.
 
+## Native Image Workers
+
+Use a Codex/Claude native subagent or background worker when a board/keyframe needs precise imagegen repair and the iteration would bloat the main director context. The worker is a harness-native helper, not a Mirage actor.
+
+Give the worker a narrow packet: project/shot id, current board or keyframe image, exact issue, preserve constraints, allowed tool (`imagegen` or local inspection), forbidden writes/spend, and expected receipt. The worker should not call paid Mirage jobs, lock/unlock, edit project text, or write Supabase state.
+
+The worker returns a compact receipt: final image path, prompt used, changes made, caveats, and whether it believes the result is import-ready. The main director then shows the result if needed, uploads it with `purpose=storyboard_image` or `purpose=keyframe_image`, and calls `import_storyboard_image` or `import_keyframe_image`. Lock only after artist approval or when the instruction explicitly allowed locking.
+
 After any storyboard `start_job`, return the job id and keep working unless the artist explicitly asks you to watch or poll. Studio realtime is the default progress surface; use `get_job` for deliberate checks/watch mode, not habit loops.
 
 Keep `gpt-image-2` as the storyboard provider unless the artist explicitly asks to test another model or GPT Image 2 fails repeatedly with a clear provider-specific issue.

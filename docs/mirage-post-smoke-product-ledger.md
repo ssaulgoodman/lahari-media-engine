@@ -373,10 +373,19 @@ refreshing the browser.
 
 **Goal:** precise board/image repairs should not bloat the main director context.
 
-Use Codex imagegen or a subagent/background worker for small visual fixes, then import the result
-through the existing upload/import actions (`import_storyboard_image`, `lock_storyboard`) with a
-compact receipt. The main director thread should carry the intent, selected asset id, and result,
-not the full visual iteration transcript.
+Use Codex imagegen or a native Codex/Claude subagent/background worker for small visual fixes,
+visual triage, continuity checks, prompt-payload audits, or export packaging. Mirage does not
+coordinate the worker; the harness does. Mirage only provides clean state packets and receives
+final approved uploads/imports/actions from the main director.
+
+**Worker packet:** target project/shot/asset, exact issue, preserve constraints, allowed tools,
+forbidden writes/spend, and expected receipt.
+
+**Worker receipt:** final output path/asset id, prompt or checks run, changes made, confidence,
+caveats, and suggested next Mirage action.
+
+The main director thread carries the intent, approval, selected result, and final typed Mirage
+action. It should not carry the full visual iteration transcript.
 
 ### P5d — Agent Learning Loop `[ready soon]`
 
