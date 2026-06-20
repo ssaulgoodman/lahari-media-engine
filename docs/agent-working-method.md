@@ -28,6 +28,41 @@ Two roots:
 - **Schemas are the buttons; skills are how to play them.** Action contracts say what's callable; skills teach the maneuver/repair ladder. Don't put maneuverability in schemas or runtime discovery.
 - **Lean by default, heavy opt-in.** Reads/payloads return the working set; full bodies are explicit. Over-fetching means a missing compact field to add, not a fatter default.
 - **Translate intent into typed edits.** Never pipe raw artist notes into actions.
+- **Workers are helpers, not operators.** Native subagents/background workers may inspect, draft, repair local media, or package evidence. The main director owns Mirage reads that establish truth, artist approval, paid actions, uploads/imports, locks, and every persisted state write.
+
+## Native Worker Contract
+
+Use Codex/Claude native workers only when they protect the main director context or create real parallelism: precise imagegen repair, visual triage across many boards/clips, prompt-payload contradiction checks, continuity audits, source-material cleanup, or editor handoff packaging. Do not spawn a worker for a normal single action, an ambiguous creative decision, or anything that needs direct artist approval before proceeding.
+
+The director sends a bounded packet:
+
+```md
+Native worker packet
+- Target: project/scene/shot/asset IDs and names
+- Task: one concrete question or repair
+- Inputs: exact files, image URLs/paths, `describe_prompt` snippets, or payload summaries to inspect
+- Preserve: identity, style, geography, lock state, timing, text that must not change
+- Allowed tools: e.g. imagegen, local visual inspection, local file packaging
+- Forbidden: paid Mirage jobs, Supabase writes, lock/unlock, project text edits, secret/token handling
+- Return: the receipt fields below
+```
+
+The worker returns a compact receipt:
+
+```md
+Native worker receipt
+- Target:
+- Inputs read:
+- Tools used:
+- Output path or asset candidate:
+- Prompt/checks performed:
+- Changes made or findings:
+- Suggested Mirage action:
+- Caveats/risks:
+- Ready to apply: yes/no
+```
+
+The director then decides what to do. If bytes were produced, upload/import through the normal Mirage path (`/api/agent/uploads`, `import_storyboard_image`, `import_keyframe_image`, or the relevant typed action). If the receipt is an audit, translate it into a dry-run, `contextOverrides`, `apply_text_edits`, `apply_shot_prompts`, or another explicit action. Never treat a worker receipt as canonical project state by itself.
 
 ## Verification rules
 

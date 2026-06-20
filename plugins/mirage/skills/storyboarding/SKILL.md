@@ -72,9 +72,9 @@ Before locking, check whether the board actually stages the shot:
 
 Use a Codex/Claude native subagent or background worker when a board/keyframe needs precise imagegen repair and the iteration would bloat the main director context. The worker is a harness-native helper, not a Mirage actor.
 
-Give the worker a narrow packet: project/shot id, current board or keyframe image, exact issue, preserve constraints, allowed tool (`imagegen` or local inspection), forbidden writes/spend, and expected receipt. The worker should not call paid Mirage jobs, lock/unlock, edit project text, or write Supabase state.
+Use the native-worker packet/receipt contract from `docs/agent-working-method.md`. For storyboard work, the packet should include the target shot, current board/keyframe image, exact repair, preserve constraints, allowed tool (`imagegen` or local inspection), and the intended import path. The worker should not call paid Mirage jobs, lock/unlock, edit project text, or write Supabase state.
 
-The worker returns a compact receipt: final image path, prompt used, changes made, caveats, and whether it believes the result is import-ready. The main director then shows the result if needed, uploads it with `purpose=storyboard_image` or `purpose=keyframe_image`, and calls `import_storyboard_image` or `import_keyframe_image`. Lock only after artist approval or when the instruction explicitly allowed locking.
+The receipt must say whether the result is import-ready and include the final image path, prompt used, changes made, caveats, and suggested Mirage action. The main director then shows the result if needed, uploads it with `purpose=storyboard_image` or `purpose=keyframe_image`, and calls `import_storyboard_image` or `import_keyframe_image`. Lock only after artist approval or when the instruction explicitly allowed locking.
 
 After any storyboard `start_job`, return the job id and keep working unless the artist explicitly asks you to watch or poll. Studio realtime is the default progress surface; use `get_job` for deliberate checks/watch mode, not habit loops.
 

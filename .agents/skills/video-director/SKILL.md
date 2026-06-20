@@ -74,7 +74,7 @@ In storyboard mode, dry-run returns the composed prompt as segments: `format`, `
 
 Use a Codex/Claude native subagent or background worker for bounded video-adjacent audits that would bloat the main director context: continuity checks across a scene, payload contradiction checks, candidate/reroll triage, or editor-handoff packaging. Mirage does not coordinate these workers; the harness does.
 
-Give the worker a narrow packet: target shots/assets, exact question, payload summaries or selected `describe_prompt` output, preserve constraints, forbidden writes/spend, and expected receipt. The worker should return findings and suggested next Mirage actions only. The main director remains responsible for dry-runs, paid `start_job` calls, imports, locks, and persisted edits.
+Use the native-worker packet/receipt contract from `docs/agent-working-method.md`. For video work, the packet should include target shots/assets, the exact question, payload summaries or selected `describe_prompt` output, preserve constraints, and forbidden writes/spend. The worker returns findings, caveats, and suggested next Mirage actions only. The main director remains responsible for dry-runs, paid `start_job` calls, imports, locks, and persisted edits.
 
 ## Repair Ladder
 
