@@ -13,7 +13,7 @@ export const AutoGrowTextarea: React.FC<Props> = ({ inputRef, value, defaultValu
 
   const resize = (el: HTMLTextAreaElement | null) => {
     if (!el) return;
-    el.style.height = '0px';
+    el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
   };
 
@@ -53,6 +53,7 @@ export const AutoGrowTextarea: React.FC<Props> = ({ inputRef, value, defaultValu
     (innerRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
     if (typeof inputRef === 'function') inputRef(el);
     else if (inputRef && 'current' in inputRef) (inputRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
+    resize(el);
   };
 
   return (
@@ -62,7 +63,7 @@ export const AutoGrowTextarea: React.FC<Props> = ({ inputRef, value, defaultValu
       value={value as any}
       defaultValue={defaultValue as any}
       onInput={(e) => { resize(e.currentTarget); onInput?.(e); }}
-      style={{ ...style, overflow: 'hidden', resize: 'none' }}
+      style={{ ...style, boxSizing: 'border-box', overflow: 'hidden', resize: 'none' }}
     />
   );
 };

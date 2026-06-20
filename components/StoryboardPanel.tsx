@@ -802,9 +802,9 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             <span className="text-zinc-500 flex-shrink-0 font-mono tabular-nums">{promptText.length} chars</span>
           </button>
         ) : isLocked ? (
-          <pre className={`surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed transition-all duration-700 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>{promptText || '(empty prompt)'}</pre>
+          <pre className={`surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed transition-colors duration-200 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>{promptText || '(empty prompt)'}</pre>
         ) : (
-          <div className={`rounded-md transition-all duration-700 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>
+          <div className={`rounded-md transition-colors duration-200 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>
             <AutoGrowTextarea
               value={promptText}
               onChange={(e) => onPromptChange((e.target as HTMLTextAreaElement).value)}
@@ -1192,9 +1192,9 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
           )}
         </div>
         {isLocked ? (
-          <pre className={`surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed transition-all duration-700 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>{cutPlanText.trim() || '(empty video prompt)'}</pre>
+          <pre className={`surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed transition-colors duration-200 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>{cutPlanText.trim() || '(empty video prompt)'}</pre>
         ) : (
-          <div className={`rounded-md transition-all duration-700 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>
+          <div className={`rounded-md transition-colors duration-200 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>
             <AutoGrowTextarea
               value={cutPlanText}
               onChange={(e) => onCutPlanChange((e.target as HTMLTextAreaElement).value)}
