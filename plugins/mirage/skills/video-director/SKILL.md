@@ -84,6 +84,8 @@ In storyboard mode, dry-run returns the composed prompt as segments: `format`, `
 
 Always dry-run, state requirements/cost, then ask before `start_job(generate_video)`. For batches, summarize total shots and expected spend.
 
+After `start_job`, return the job id and keep working unless the artist explicitly asks you to watch or poll. Studio realtime is the default progress surface; use `get_job` for deliberate checks/watch mode, not habit loops.
+
 ## Avoid
 
 - Video generation before board/frame lock.

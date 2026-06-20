@@ -485,6 +485,9 @@ repeatable human/agent product surface.
 - 2026-06-18 · Studio live-refresh backlog captured · — · Added automatic realtime refresh for
   agent/MCP-triggered generations so Studio reflects completed boards/videos without browser
   refresh or agent polling loops.
+- 2026-06-20 · P5b async watch discipline landed locally · — · `start_job` / `get_job`
+  descriptions, AGENTS/CLAUDE templates, and paid-generation skills now tell agents to return
+  the job id and continue useful work unless the artist explicitly asks to watch/poll.
 - 2026-06-18 · top-bar activity polish captured · — · Added refined agent/action indicators to
   Studio polish: calm spinners/progress pills, soft transitions, and no flashing debug colors.
 - 2026-06-18 · P1b first UI polish landed locally · — · Autosizing prompt textareas now refit on

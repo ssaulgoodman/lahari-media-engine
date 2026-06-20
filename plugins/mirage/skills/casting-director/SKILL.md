@@ -33,6 +33,8 @@ Fix weak anchors before spending on boards or videos.
 
 Mirage saves the generated prompt on the cast/environment row and logs the exact render prompt. Use that trail when diagnosing drift.
 
+After `start_job(generate_candidates)`, return the job id and keep working unless the artist explicitly asks you to watch or poll. Studio realtime is the default progress surface; use `get_job` for deliberate checks/watch mode, not habit loops.
+
 ## Prompt Pattern
 
 Use the normal generated prompt unless you can write the whole final reference prompt better. A good `promptOverride` is compact and reference-oriented.

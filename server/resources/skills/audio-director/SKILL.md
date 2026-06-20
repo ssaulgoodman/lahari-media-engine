@@ -63,6 +63,8 @@ Do not generate TTS for this path unless the artist specifically wants TTS overl
 
 TTS is paid. Dry-run first, report missing voices/cost, then ask. Never generate with missing or uncertain voices.
 
+After any paid audio `start_job`, return the job id and keep working unless the artist explicitly asks you to watch or poll. Studio realtime is the default progress surface; use `get_job` for deliberate checks/watch mode, not habit loops.
+
 ## Avoid
 
 - Generating paid speech or voice-change before voice assignment.

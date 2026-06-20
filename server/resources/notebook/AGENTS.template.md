@@ -44,6 +44,10 @@ Use action tools to change things:
 - `start_job(actionKey, input)` for paid generation jobs.
 - `describe_action(actionKey)` for the one live schema you are about to use.
 
+After `start_job`, return the job id and continue useful work unless the artist explicitly asks
+you to watch/poll. Studio realtime is the default progress surface; use `get_job` for deliberate
+checks, not habit loops.
+
 Action schemas are live in MCP. Do not expect local `config/actions/*` files in this workspace.
 
 If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage.

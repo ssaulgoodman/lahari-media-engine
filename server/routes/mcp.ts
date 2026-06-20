@@ -1476,7 +1476,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('start_job', {
     title: 'Start Mirage job',
-    description: 'Mutating cockpit tool. Starts one paid registry action in the background and returns a jobId immediately. Prefer this for paid image, storyboard, video, and audio generation after artist approval.',
+    description: 'Mutating cockpit tool. Starts one paid registry action in the background and returns a jobId immediately. Prefer this for paid image, storyboard, video, and audio generation after artist approval. Do not poll by habit after starting; Studio realtime is the default progress surface, and get_job is for deliberate status checks.',
     inputSchema: {
       actionKey: actionKeySchema,
       input: actionInputSchema,
@@ -1485,7 +1485,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('get_job', {
     title: 'Get Mirage job',
-    description: 'Read-only cockpit tool. Returns durable status/result/error for a job started with start_job.',
+    description: 'Read-only cockpit tool. Returns durable status/result/error for a job started with start_job. Use when the artist asks for a status check or when you intentionally enter watch mode, not automatically after every start_job.',
     inputSchema: {
       projectId,
       jobId: idString,

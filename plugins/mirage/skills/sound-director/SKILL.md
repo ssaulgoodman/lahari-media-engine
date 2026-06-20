@@ -38,6 +38,8 @@ If a long-track transcription is partial, regresses, or stops far before the str
 
 Audio analysis is paid. State the question first: “Do we need lyrics meaning?” or “Do we need section timing for scene pacing?”
 
+After an audio-analysis `start_job`, return the job id and keep working unless the artist explicitly asks you to watch or poll. Studio realtime is the default progress surface; use `get_job` for deliberate checks/watch mode, not habit loops.
+
 ## Avoid
 
 - Analyzing every uploaded audio file.
