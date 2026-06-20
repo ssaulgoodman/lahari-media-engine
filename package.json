@@ -39,6 +39,7 @@
     "@google/genai": "^1.32.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@remotion/media": "4.0.448",
+    "@remotion/media-utils": "4.0.448",
     "@remotion/player": "4.0.448",
     "@supabase/supabase-js": "^2.103.0",
     "cors": "^2.8.6",
