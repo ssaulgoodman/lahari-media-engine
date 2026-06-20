@@ -5,13 +5,13 @@
  */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
+import { VideoScene, VideoShot, GenerationStatus, ApiProject, VideoPromptSlotDefaults } from '../types';
 import { ShotVideoPreview } from './ShotVideoPreview';
 import { PromptToolkit } from './PromptToolkit';
 import { StoryboardPanel, type StoryboardSubTab } from './StoryboardPanel';
 import { ShotVersionHistory } from './ShotVersionHistory';
 import { ShotContextPanel } from './ShotContextPanel';
-import { getShotContext, isCancelled, type ShotContext, type ShotRefInput, type StoryboardRefineMode } from '../services/api';
+import { getShotContext, updateShot, isCancelled, type ShotContext, type ShotRefInput, type StoryboardRefineMode } from '../services/api';
 
 // "0:32" / "00:32" / "1:23:45" → seconds.
 const parseTimeToSec = (t?: string): number => {
@@ -185,6 +185,28 @@ export const ShotCard: React.FC<ShotCardProps> = ({
       if (!signal?.aborted) setShotContextLoading(false);
     }
   }, [project.id, shot.id]);
+
+  const setProjectShotLocally = useCallback((updates: Partial<VideoShot>) => {
+    if (!onSetProject) return;
+    onSetProject({
+      ...project,
+      scenes: project.scenes.map(s => s.id === scene.id ? {
+        ...s,
+        shots: s.shots.map(sh => sh.id === shot.id ? { ...sh, ...updates } : sh),
+      } : s),
+    });
+  }, [onSetProject, project, scene.id, shot.id]);
+
+  const saveVideoPromptSlotsFromContext = useCallback(async (slots: VideoPromptSlotDefaults) => {
+    const previous = shot.videoPromptSlots;
+    setProjectShotLocally({ videoPromptSlots: slots });
+    try {
+      await updateShot(project.id, shot.id, { videoPromptSlots: slots });
+    } catch (err) {
+      setProjectShotLocally({ videoPromptSlots: previous });
+      throw err;
+    }
+  }, [project.id, setProjectShotLocally, shot.id, shot.videoPromptSlots]);
 
   useEffect(() => {
     if (!isExpanded) return;
@@ -674,6 +696,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           loading={shotContextLoading}
           error={shotContextError}
           onRefresh={() => loadShotContext()}
+          onSaveVideoPromptSlots={saveVideoPromptSlotsFromContext}
         />
         {(shot.locked || actionable) && (
           <>

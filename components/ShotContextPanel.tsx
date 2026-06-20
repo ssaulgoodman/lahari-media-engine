@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { describePrompt } from '../services/api';
-import type { PromptDescription, PromptDescriptionKind, ShotContext, ShotContextPayloadSummary } from '../services/api';
+import type { PromptDescription, PromptDescriptionKind, ShotContext, ShotContextPayloadSummary, VideoPromptSlotDefaults } from '../services/api';
 import { PromptCompositionInspector } from './PromptCompositionInspector';
 
 type ShotContextPanelProps = {
@@ -8,6 +8,7 @@ type ShotContextPanelProps = {
   loading?: boolean;
   error?: string | null;
   onRefresh?: () => void;
+  onSaveVideoPromptSlots?: (slots: VideoPromptSlotDefaults) => Promise<void> | void;
 };
 
 const SLOT_LABELS: Record<string, string> = {
@@ -16,6 +17,13 @@ const SLOT_LABELS: Record<string, string> = {
   includeRefs: 'Refs',
   includeCutPlan: 'Cut plan',
   includeAudio: 'Audio',
+};
+
+const VIDEO_SEGMENT_SLOT_FIELDS: Record<string, keyof VideoPromptSlotDefaults> = {
+  beat: 'includeShotBeat',
+  refs: 'includeRefs',
+  cut_plan: 'includeCutPlan',
+  audio: 'includeAudio',
 };
 
 const Chip: React.FC<{ children: React.ReactNode; tone?: 'default' | 'good' | 'warn' | 'muted' }> = ({ children, tone = 'default' }) => {
@@ -60,6 +68,16 @@ const recipeLabel = (config?: Record<string, unknown>) => {
 };
 
 const hashPreview = (hash?: string | null) => hash ? hash.slice(0, 8) : null;
+
+const videoSlotsFromContext = (context: ShotContext | null): VideoPromptSlotDefaults => {
+  const out: VideoPromptSlotDefaults = {};
+  const source = context?.workflowConfig?.videoPromptSlots || {};
+  (Object.keys(source) as Array<keyof VideoPromptSlotDefaults>).forEach((key) => {
+    const value = source[key]?.value;
+    if (typeof value === 'boolean') out[key] = value;
+  });
+  return out;
+};
 
 // Compact payload status only. The full provenance-annotated segment breakdown
 // lives in the dedicated PromptCompositionInspector (describe_prompt), so this
@@ -115,8 +133,11 @@ const PayloadStatus: React.FC<{
   );
 };
 
-export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loading, error, onRefresh }) => {
-  const slotEntries = Object.entries(context?.workflowConfig?.videoPromptSlots || {});
+export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loading, error, onRefresh, onSaveVideoPromptSlots }) => {
+  const contextVideoPromptSlots = videoSlotsFromContext(context);
+  const [optimisticVideoPromptSlots, setOptimisticVideoPromptSlots] = useState<VideoPromptSlotDefaults | null>(null);
+  const effectiveVideoPromptSlots = optimisticVideoPromptSlots || contextVideoPromptSlots;
+  const slotEntries = Object.entries(effectiveVideoPromptSlots);
   const storyboardRecipe = recipeLabel(context?.workflowConfig?.storyboard);
   const videoRecipe = recipeLabel(context?.workflowConfig?.video);
   const refs = context?.refs;
@@ -128,6 +149,8 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
   const [activeDescription, setActiveDescription] = useState<PromptDescription | null>(null);
   const [descriptionLoadingKey, setDescriptionLoadingKey] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
+  const [slotSavingKey, setSlotSavingKey] = useState<string | null>(null);
+  const [slotSaveError, setSlotSaveError] = useState<string | null>(null);
   const inspectRequestId = useRef(0);
 
   useEffect(() => {
@@ -135,6 +158,9 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
     setActiveDescription(null);
     setDescriptionLoadingKey(null);
     setDescriptionError(null);
+    setOptimisticVideoPromptSlots(null);
+    setSlotSavingKey(null);
+    setSlotSaveError(null);
   }, [context?.project.id, context?.shot.id]);
 
   const inspectPrompt = async (kind: PromptDescriptionKind, versionId?: string | null) => {
@@ -163,6 +189,42 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
       }
     }
   };
+
+  const saveVideoPromptSlotDefault = async (
+    field: keyof VideoPromptSlotDefaults,
+    next: boolean | undefined,
+  ) => {
+    if (!context || !onSaveVideoPromptSlots) return;
+    const previous = effectiveVideoPromptSlots;
+    const nextSlots: VideoPromptSlotDefaults = { ...previous };
+    if (next === undefined) delete nextSlots[field];
+    else nextSlots[field] = next;
+
+    setOptimisticVideoPromptSlots(nextSlots);
+    setSlotSavingKey(field);
+    setSlotSaveError(null);
+    try {
+      await onSaveVideoPromptSlots(nextSlots);
+      onRefresh?.();
+    } catch (err: any) {
+      setOptimisticVideoPromptSlots(previous);
+      setSlotSaveError(err?.message || 'Unable to save video payload defaults.');
+    } finally {
+      setSlotSavingKey(current => current === field ? null : current);
+    }
+  };
+
+  const videoPromptSegmentControls = activeDescription?.kind === 'video'
+    ? Object.fromEntries(Object.entries(VIDEO_SEGMENT_SLOT_FIELDS).map(([slot, field]) => [
+      slot,
+      {
+        value: effectiveVideoPromptSlots[field],
+        disabled: !!slotSavingKey || !onSaveVideoPromptSlots,
+        title: 'Save this segment default for future video generations on this shot.',
+        onChange: (next: boolean | undefined) => saveVideoPromptSlotDefault(field, next),
+      },
+    ]))
+    : undefined;
 
   const blockers: Array<{ surface: string; prerequisites: string[] }> = [];
   if (storyboardEligibility && storyboardEligibility.canRun === false) {
@@ -290,19 +352,24 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
             </div>
           </div>
 
-          {slotEntries.length > 0 && (
+          {(slotEntries.length > 0 || slotSavingKey || slotSaveError) && (
             <div className="rounded-lg border border-white/[0.06] bg-black/20 p-3 space-y-2">
-              <SectionLabel aside="Persistent next-run defaults">Video prompt slots</SectionLabel>
+              <SectionLabel aside={slotSavingKey ? `Saving ${SLOT_LABELS[slotSavingKey] || slotSavingKey}…` : 'Persistent next-run defaults'}>Video prompt slots</SectionLabel>
               <div className="flex flex-wrap gap-1.5">
-                {slotEntries.map(([key, slot]) => {
-                  const value = summarizeSlotValue(slot?.value);
+                {slotEntries.length > 0 ? slotEntries.map(([key, slot]) => {
+                  const value = summarizeSlotValue(slot);
                   return (
                     <Chip key={key} tone={value === 'off' ? 'warn' : value === 'on' ? 'good' : 'muted'}>
                       {SLOT_LABELS[key] || key}: {value}
                     </Chip>
                   );
-                })}
+                }) : <Chip tone="muted">following workflow defaults</Chip>}
               </div>
+              {slotSaveError && (
+                <div className="rounded-md border border-red-400/15 bg-red-500/[0.06] px-2 py-1.5 text-[11px] leading-relaxed text-red-200">
+                  {slotSaveError}
+                </div>
+              )}
             </div>
           )}
 
@@ -336,6 +403,7 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
                   note={activeDescription.note}
                   generatedAt={activeDescription.generatedAt}
                   source={activeDescription.source}
+                  segmentControls={videoPromptSegmentControls}
                 />
               ) : descriptionLoadingKey ? (
                 <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-zinc-400">
