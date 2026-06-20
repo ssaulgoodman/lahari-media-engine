@@ -385,7 +385,11 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               });
             }}
             disabled={!!headerPendingAction || isGenerating || (!actionable && !shot.locked)}
-            className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center"
+            className={`w-7 h-7 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center ${
+              headerImageWorking
+                ? 'bg-white/[0.08] text-white ring-1 ring-white/[0.08]'
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.06] disabled:bg-transparent'
+            }`}
             title={isStoryboardMode
               ? (!shot.storyboardPrompt?.trim() || !shot.storyboardCutPlan?.trim()
                 ? 'Write storyboard prompt'
@@ -406,7 +410,11 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           <button
             onClick={() => { void runHeaderAction('video', () => onGenerateVideo(scene.id, shot.id, undefined, getActiveRefs(shot, 'video'))); }}
             disabled={!!headerPendingAction || !canGenerateVideo || isGenerating}
-            className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center"
+            className={`w-7 h-7 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center ${
+              headerVideoWorking
+                ? 'bg-white/[0.08] text-white ring-1 ring-white/[0.08]'
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.06] disabled:bg-transparent'
+            }`}
             title={isStoryboardMode && !shot.storyboardLocked ? 'Lock the storyboard first' : hasVideo ? 'Regenerate video' : 'Generate video'}
             aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}
           >
@@ -431,7 +439,15 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               });
             }}
             disabled={!!headerPendingAction || isLockingShot || isGenerating || (isStoryboardMode ? (!shot.storyboardLocked && !canLockStoryboard) : (!shot.locked && !canLockShot))}
-            className={`w-7 h-7 rounded-md transition-all flex items-center justify-center ${visibleLocked ? 'text-white bg-white/[0.08] hover:bg-white/[0.12]' : (isStoryboardMode ? canLockStoryboard : canLockShot) ? 'text-white ring-1 ring-white/50 hover:ring-white hover:bg-white/[0.04]' : 'text-zinc-400/60'} disabled:opacity-50`}
+            className={`w-7 h-7 rounded-md transition-colors flex items-center justify-center ${
+              headerLockWorking
+                ? 'text-white bg-white/[0.08] ring-1 ring-white/[0.08]'
+                : visibleLocked
+                  ? 'text-white bg-white/[0.08] hover:bg-white/[0.12]'
+                  : (isStoryboardMode ? canLockStoryboard : canLockShot)
+                    ? 'text-white ring-1 ring-white/50 hover:ring-white hover:bg-white/[0.04]'
+                    : 'text-zinc-400/60'
+            } disabled:opacity-50`}
             title={isStoryboardMode
               ? (shot.storyboardLocked ? 'Unlock storyboard' : canLockStoryboard ? 'Lock storyboard for video' : 'Generate storyboard image first')
               : isLockingShot ? (shot.locked ? 'Locking…' : 'Unlocking…') : shot.locked ? 'Unlock shot' : canLockShot ? 'Lock shot' : 'Generate start frame + video first to lock'}

@@ -29,6 +29,17 @@ import { PromptCompositionInspector } from './PromptCompositionInspector';
 export type StoryboardSubTab = 'storyboard' | 'video';
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
+const MiniSpinner: React.FC<{ tone?: 'light' | 'dark' }> = ({ tone = 'light' }) => (
+  <span
+    className={`w-3 h-3 rounded-full border-2 animate-spin flex-shrink-0 ${
+      tone === 'dark'
+        ? 'border-zinc-400 border-t-black'
+        : 'border-zinc-500 border-t-white'
+    }`}
+    aria-hidden="true"
+  />
+);
+
 interface StoryboardPanelProps {
   project: ApiProject;
   shot: VideoShot;
@@ -841,10 +852,11 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             // Stale → subtle amber ring nominates Rewrite as the recommended
             // next action. No size change; reads as "this one first" without
             // shouting.
-            className={`min-w-[112px] justify-center px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5 ${promptStale ? 'ring-1 ring-amber-400/40' : ''}`}
+            className={`w-[130px] justify-center px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5 ${promptStale ? 'ring-1 ring-amber-400/40' : ''}`}
             title={promptStale ? stalenessHint : undefined}
+            aria-busy={isWritingPrompt}
           >
-            {isWritingPrompt && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+            {isWritingPrompt && <MiniSpinner />}
             {isWritingPrompt ? 'Writing…' : promptText.trim() ? 'Rewrite prompt' : 'Write prompt'}
           </button>
           {isWritingPrompt && (
@@ -865,7 +877,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
           <button
             onClick={() => onGenerateStoryboard(shot.id)}
             disabled={isGenerating || saving || promptRequired}
-            className="min-w-[134px] justify-center px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
+            className="w-[154px] justify-center px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
             // Tooltip priority: required-fields error > staleness hint >
             // nothing. Staleness only surfaces after the first storyboard
             // exists; before that the artist hasn't seen any output yet so
@@ -877,8 +889,9 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
                 ? stalenessHint
                 : undefined
             }
+            aria-busy={isGenerating}
           >
-            {isGenerating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+            {isGenerating && <MiniSpinner tone="dark" />}
             {/* Amber dot when the prompt is stale AND a storyboard already
                 exists — warns the artist the next render will use
                 out-of-date text. Solid amber-500 reads on the white button;
@@ -893,10 +906,11 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               type="button"
               onClick={onUploadStoryboardClick}
               disabled={isGenerating || saving || isWritingPrompt || uploadingStoryboard}
-              className="min-w-[98px] justify-center px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              className="w-[116px] justify-center px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
               title="Upload an existing storyboard image and make it the active board for this shot."
+              aria-busy={uploadingStoryboard}
             >
-              {uploadingStoryboard && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+              {uploadingStoryboard && <MiniSpinner />}
               {uploadingStoryboard ? 'Uploading…' : 'Upload as-is'}
             </button>
           )}
@@ -919,11 +933,12 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             <button
               onClick={handleLockClick}
               disabled={isGenerating || saving || locking}
-              className="min-w-[74px] justify-center px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              className="w-[92px] justify-center px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
               title={saving ? 'Saving first…' : locking ? 'Locking…' : 'Lock this storyboard so video generation can use it.'}
+              aria-busy={saving || locking}
             >
-              {(saving || locking) && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
-              {saving ? 'Locking…' : locking ? 'Locking…' : 'Lock'}
+              {(saving || locking) && <MiniSpinner />}
+              {saving ? 'Saving…' : locking ? 'Locking…' : 'Lock'}
             </button>
           )}
         </div>
@@ -936,9 +951,10 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             disabled={unlocking}
             className="text-[11px] text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-60"
             title={unlocking ? 'Unlocking…' : 'Unlock to refine or regenerate this storyboard.'}
+            aria-busy={unlocking}
           >
             {unlocking ? (
-              <span className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+              <MiniSpinner />
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
@@ -1245,10 +1261,11 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
         <button
           onClick={() => onGenerateVideo(scene.id, shot.id, undefined, undefined)}
           disabled={!canGenerate}
-          className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
+          className="w-[154px] justify-center px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
           title={!isLocked ? 'Lock the storyboard first' : isVideoGenerating ? 'Video generation in progress' : hasVideo ? 'Regenerate video from the locked storyboard' : 'Generate video from the locked storyboard'}
+          aria-busy={isVideoGenerating}
         >
-          {isVideoGenerating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+          {isVideoGenerating && <MiniSpinner tone="dark" />}
           {isVideoGenerating ? 'Generating…' : hasVideo ? 'Regenerate video' : 'Generate video'}
         </button>
         {!isLocked && (
