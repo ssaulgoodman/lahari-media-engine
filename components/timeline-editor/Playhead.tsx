@@ -55,7 +55,6 @@ const Playhead: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => {
   return (
     <div
       ref={ref}
-      onMouseDown={onDown}
       style={{
         position: 'absolute',
         left: 40 + position,
@@ -64,8 +63,7 @@ const Playhead: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => {
         height: 'calc(100% - 40px)',
         transform: 'translateX(-50%)',
         zIndex: 20,
-        cursor: 'ew-resize',
-        pointerEvents: 'auto',
+        pointerEvents: 'none',
       }}
     >
       {dragging && (
@@ -91,6 +89,7 @@ const Playhead: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => {
         </div>
       )}
       <div
+        onMouseDown={onDown}
         style={{
           position: 'absolute',
           top: 28,
@@ -104,6 +103,8 @@ const Playhead: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => {
           boxShadow: dragging
             ? '0 0 0 3px rgba(255,255,255,0.12), 0 6px 18px rgba(0,0,0,0.45)'
             : '0 3px 10px rgba(0,0,0,0.35)',
+          cursor: 'ew-resize',
+          pointerEvents: 'auto',
         }}
       />
       <div
@@ -119,14 +120,17 @@ const Playhead: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => {
         }}
       />
       <div
+        onMouseDown={onDown}
         style={{
           position: 'absolute',
           top: 42,
           left: '50%',
-          width: 10,
+          width: 8,
           height: 'calc(100% - 42px)',
           transform: 'translateX(-50%)',
           background: 'transparent',
+          cursor: 'ew-resize',
+          pointerEvents: 'auto',
         }}
       />
     </div>
