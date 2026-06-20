@@ -29,10 +29,13 @@ export type RealtimeNotice = {
 type SetProject = (update: ApiProject | ((prev: ApiProject | null) => ApiProject | null) | null) => void;
 
 export const useRealtimePresence = (
-  projectId: string | undefined,
+  project: ApiProject | null | undefined,
   activeProjectId: MutableRefObject<string | null>,
   setProject: SetProject,
 ) => {
+  const projectId = project?.id;
+  const sceneIds = (project?.scenes || []).map(scene => scene.id).filter(Boolean);
+  const sceneKey = sceneIds.join(',');
   const [agentOperations, setAgentOperations] = useState<Record<string, AgentOperationRow>>({});
   const [realtimeNotice, setRealtimeNotice] = useState<RealtimeNotice | null>(null);
   const realtimeRefreshTimer = useRef<number | null>(null);
@@ -95,7 +98,7 @@ export const useRealtimePresence = (
       scheduleRealtimeProjectRefresh('Studio updated');
     };
 
-    const channel = supabase
+    let channel = supabase
       .channel(`${TABLE_PREFIX}-project-${projectId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: table('agent_operations'), filter: `project_id=eq.${projectId}` }, handleAgentOperation)
       .on('postgres_changes', { event: '*', schema: 'public', table: table('projects'), filter: `id=eq.${projectId}` }, handleProjectChange)
@@ -109,6 +112,14 @@ export const useRealtimePresence = (
       .on('postgres_changes', { event: '*', schema: 'public', table: table('project_prompt_overrides'), filter: `project_id=eq.${projectId}` }, handleProjectChange)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: table('director_events'), filter: `project_id=eq.${projectId}` }, handleProjectChange);
 
+    for (const sceneId of sceneIds) {
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: table('shots'), filter: `scene_id=eq.${sceneId}` },
+        handleProjectChange,
+      );
+    }
+
     channel.subscribe();
 
     return () => {
@@ -116,7 +127,7 @@ export const useRealtimePresence = (
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
       if (realtimeNoticeTimer.current) window.clearTimeout(realtimeNoticeTimer.current);
     };
-  }, [projectId, scheduleRealtimeProjectRefresh]);
+  }, [projectId, sceneKey, scheduleRealtimeProjectRefresh]);
 
   return { agentOperations, realtimeNotice };
 };

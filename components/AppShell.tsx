@@ -129,7 +129,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     setCurrentStep(step);
   }, []);
 
-  const { agentOperations, realtimeNotice } = useRealtimePresence(project?.id, activeProjectId, setProject);
+  const { agentOperations, realtimeNotice } = useRealtimePresence(project, activeProjectId, setProject);
 
   const { restoring } = usePersistedProject({
     currentStep,
