@@ -18,6 +18,7 @@ const TIMELINE_SHORTCUTS: Array<[string, string]> = [
   ['M', 'Toggle marker at playhead'],
   [', / .', 'Previous / next marker'],
   ['S', 'Split clip at playhead'],
+  ['⌘/Ctrl + D', 'Duplicate selected clip(s)'],
   ['Delete / Backspace', 'Delete selected clip(s)'],
   ['⌘/Ctrl + Z', 'Undo'],
   ['⌘/Ctrl + Shift + Z', 'Redo'],
@@ -1146,6 +1147,14 @@ const TimelineEditor: React.FC<Props> = ({
       if (!mod && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
         const { splitActiveAtPlayhead } = useStore.getState();
         const did = splitActiveAtPlayhead();
+        if (did) e.preventDefault();
+        return;
+      }
+
+      // Cmd/Ctrl+D = duplicate selected clip(s) to the end of their track.
+      if (mod && !e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+        const { duplicateActiveItems } = useStore.getState();
+        const did = duplicateActiveItems();
         if (did) e.preventDefault();
         return;
       }

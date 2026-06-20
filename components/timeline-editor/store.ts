@@ -99,6 +99,10 @@ interface ITimelineStore {
   // right half, incoming transitions stay on the left (left's id is unchanged).
   // Returns true when a split actually happened so callers can flash UI.
   splitActiveAtPlayhead: () => boolean;
+  // Clones the active item(s) and appends each clone to the end of its own
+  // track, so duplicates never overlap existing clips. The clones become the
+  // new selection. Returns true when at least one item was duplicated.
+  duplicateActiveItems: () => boolean;
 }
 
 const useStore = create<ITimelineStore>((set, get) => ({
@@ -419,6 +423,60 @@ const useStore = create<ITimelineStore>((set, get) => ({
         tracks: nextTracks,
         transitionIds: nextTransitionIds,
         transitionsMap: nextTransitionsMap,
+      },
+      { kind: 'update', updateHistory: true },
+    );
+
+    return true;
+  },
+
+  duplicateActiveItems: () => {
+    const s = get();
+    if (!s.stateManager) return false;
+    const ids = s.activeIds.filter((id) => Boolean(s.trackItemsMap[id]));
+    if (ids.length === 0) return false;
+
+    const nextItemsMap: Record<string, ITrackItem> = { ...s.trackItemsMap };
+    const nextItemIds = [...s.trackItemIds];
+    const nextTracks = s.tracks.map((t) => ({ ...t, items: [...(t.items as string[])] }));
+    const newIds: string[] = [];
+
+    for (const id of ids) {
+      const item = s.trackItemsMap[id] as any;
+      const track = nextTracks.find((t) => t.id === item.trackId);
+      if (!track) continue;
+      // Append at the current end of the clone's own track — no overlap.
+      const trackEnd = (track.items as string[]).reduce((max, iid) => {
+        const it = nextItemsMap[iid] as any;
+        return Math.max(max, it?.display?.to ?? 0);
+      }, 0);
+      const width = Math.max(0, (item.display?.to ?? 0) - (item.display?.from ?? 0));
+      const newId = generateId();
+      nextItemsMap[newId] = {
+        ...item,
+        id: newId,
+        display: { from: trackEnd, to: trackEnd + width },
+        metadata: { ...(item.metadata || {}), resourceId: newId },
+      };
+      nextItemIds.push(newId);
+      (track.items as string[]).push(newId);
+      newIds.push(newId);
+    }
+
+    if (newIds.length === 0) return false;
+
+    let nextDuration = s.duration;
+    for (const it of Object.values(nextItemsMap) as any[]) {
+      nextDuration = Math.max(nextDuration, it?.display?.to ?? 0);
+    }
+
+    s.stateManager.updateState(
+      {
+        trackItemIds: nextItemIds,
+        trackItemsMap: nextItemsMap,
+        tracks: nextTracks,
+        activeIds: newIds,
+        duration: nextDuration,
       },
       { kind: 'update', updateHistory: true },
     );
