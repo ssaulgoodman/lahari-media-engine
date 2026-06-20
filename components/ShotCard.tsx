@@ -11,7 +11,7 @@ import { PromptToolkit } from './PromptToolkit';
 import { StoryboardPanel, type StoryboardSubTab } from './StoryboardPanel';
 import { ShotVersionHistory } from './ShotVersionHistory';
 import { ShotContextPanel } from './ShotContextPanel';
-import { getShotContext, updateShot, isCancelled, type ShotContext, type ShotRefInput, type StoryboardRefineMode } from '../services/api';
+import { applyShotWorkflowModes, getShotContext, updateShot, isCancelled, type ShotContext, type ShotRefInput, type ShotWorkflowMode, type StoryboardRefineMode } from '../services/api';
 
 // "0:32" / "00:32" / "1:23:45" → seconds.
 const parseTimeToSec = (t?: string): number => {
@@ -148,7 +148,10 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   const [shotContextError, setShotContextError] = useState<string | null>(null);
   const endFrameFileRef = useRef<HTMLInputElement>(null);
 
-  const isStoryboardMode = storyboardSupported && studioMode === 'storyboard';
+  const effectiveStudioMode = shot.workflowMode === 'storyboard' || shot.workflowMode === 'keyframe'
+    ? shot.workflowMode
+    : studioMode;
+  const isStoryboardMode = storyboardSupported && effectiveStudioMode === 'storyboard';
   const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.endImageStatus === GenerationStatus.LOADING || shot.storyboardStatus === GenerationStatus.LOADING || shot.storyboardPromptStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
   const isError = shot.imageStatus === GenerationStatus.ERROR || shot.videoStatus === GenerationStatus.ERROR || shot.storyboardStatus === GenerationStatus.ERROR || shot.storyboardPromptStatus === GenerationStatus.ERROR;
   const activeCastMembers = project.cast.filter(c => shot.castIds?.includes(c.id)) || [];
@@ -207,6 +210,21 @@ export const ShotCard: React.FC<ShotCardProps> = ({
       throw err;
     }
   }, [project.id, setProjectShotLocally, shot.id, shot.videoPromptSlots]);
+
+  const saveWorkflowModeFromContext = useCallback(async (workflowMode: ShotWorkflowMode) => {
+    const previous = shot.workflowMode || 'auto';
+    setProjectShotLocally({ workflowMode });
+    try {
+      await applyShotWorkflowModes(project.id, [{
+        shotId: shot.id,
+        workflowMode,
+        note: 'Updated from Studio shot state panel.',
+      }]);
+    } catch (err) {
+      setProjectShotLocally({ workflowMode: previous });
+      throw err;
+    }
+  }, [project.id, setProjectShotLocally, shot.id, shot.workflowMode]);
 
   useEffect(() => {
     if (!isExpanded) return;
@@ -304,6 +322,14 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           )}
           {shot.videoStatus === GenerationStatus.STALE && (
             <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 flex-shrink-0" title="The previous video is out of sync with the end keyframe set by the next shot.">stale</span>
+          )}
+          {shot.workflowMode && shot.workflowMode !== 'auto' && (
+            <span
+              className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-200 flex-shrink-0"
+              title="This shot overrides the project-wide Studio mode."
+            >
+              {shot.workflowMode}
+            </span>
           )}
           {shot.refinedFromPrevFrame && (
             <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0" title="Prompt was auto-rewritten by Claude after seeing the previous shot's actual last frame.">refined</span>
@@ -713,6 +739,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           error={shotContextError}
           onRefresh={() => loadShotContext()}
           onSaveVideoPromptSlots={saveVideoPromptSlotsFromContext}
+          onSaveWorkflowMode={saveWorkflowModeFromContext}
         />
         {(shot.locked || actionable) && (
           <>

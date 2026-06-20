@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { describePrompt } from '../services/api';
-import type { PromptDescription, PromptDescriptionKind, ShotContext, ShotContextPayloadSummary, VideoPromptSlotDefaults } from '../services/api';
+import type { PromptDescription, PromptDescriptionKind, ShotContext, ShotContextPayloadSummary, ShotWorkflowMode, VideoPromptSlotDefaults } from '../services/api';
 import { PromptCompositionInspector } from './PromptCompositionInspector';
 
 type ShotContextPanelProps = {
@@ -9,6 +9,7 @@ type ShotContextPanelProps = {
   error?: string | null;
   onRefresh?: () => void;
   onSaveVideoPromptSlots?: (slots: VideoPromptSlotDefaults) => Promise<void> | void;
+  onSaveWorkflowMode?: (mode: ShotWorkflowMode) => Promise<void> | void;
 };
 
 const SLOT_LABELS: Record<string, string> = {
@@ -25,6 +26,12 @@ const VIDEO_SEGMENT_SLOT_FIELDS: Record<string, keyof VideoPromptSlotDefaults> =
   cut_plan: 'includeCutPlan',
   audio: 'includeAudio',
 };
+
+const WORKFLOW_MODE_OPTIONS: Array<{ value: ShotWorkflowMode; label: string; title: string }> = [
+  { value: 'auto', label: 'Auto', title: 'Follow the project/model default for this shot.' },
+  { value: 'storyboard', label: 'Storyboard', title: 'Force storyboard-board video generation for this shot.' },
+  { value: 'keyframe', label: 'Keyframe', title: 'Force start-keyframe video generation for this shot.' },
+];
 
 const Chip: React.FC<{ children: React.ReactNode; tone?: 'default' | 'good' | 'warn' | 'muted' }> = ({ children, tone = 'default' }) => {
   const toneClass = tone === 'good'
@@ -77,6 +84,11 @@ const videoSlotsFromContext = (context: ShotContext | null): VideoPromptSlotDefa
     if (typeof value === 'boolean') out[key] = value;
   });
   return out;
+};
+
+const workflowModeFromContext = (context: ShotContext | null): ShotWorkflowMode => {
+  const value = context?.shot.savedWorkflowMode;
+  return value === 'storyboard' || value === 'keyframe' ? value : 'auto';
 };
 
 // Compact payload status only. The full provenance-annotated segment breakdown
@@ -133,10 +145,13 @@ const PayloadStatus: React.FC<{
   );
 };
 
-export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loading, error, onRefresh, onSaveVideoPromptSlots }) => {
+export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loading, error, onRefresh, onSaveVideoPromptSlots, onSaveWorkflowMode }) => {
   const contextVideoPromptSlots = videoSlotsFromContext(context);
   const [optimisticVideoPromptSlots, setOptimisticVideoPromptSlots] = useState<VideoPromptSlotDefaults | null>(null);
   const effectiveVideoPromptSlots = optimisticVideoPromptSlots || contextVideoPromptSlots;
+  const contextWorkflowMode = workflowModeFromContext(context);
+  const [optimisticWorkflowMode, setOptimisticWorkflowMode] = useState<ShotWorkflowMode | null>(null);
+  const effectiveWorkflowMode = optimisticWorkflowMode || contextWorkflowMode;
   const slotEntries = Object.entries(effectiveVideoPromptSlots);
   const storyboardRecipe = recipeLabel(context?.workflowConfig?.storyboard);
   const videoRecipe = recipeLabel(context?.workflowConfig?.video);
@@ -151,6 +166,8 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [slotSavingKey, setSlotSavingKey] = useState<string | null>(null);
   const [slotSaveError, setSlotSaveError] = useState<string | null>(null);
+  const [workflowSaving, setWorkflowSaving] = useState(false);
+  const [workflowSaveError, setWorkflowSaveError] = useState<string | null>(null);
   const inspectRequestId = useRef(0);
 
   useEffect(() => {
@@ -159,8 +176,11 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
     setDescriptionLoadingKey(null);
     setDescriptionError(null);
     setOptimisticVideoPromptSlots(null);
+    setOptimisticWorkflowMode(null);
     setSlotSavingKey(null);
     setSlotSaveError(null);
+    setWorkflowSaving(false);
+    setWorkflowSaveError(null);
   }, [context?.project.id, context?.shot.id]);
 
   const inspectPrompt = async (kind: PromptDescriptionKind, versionId?: string | null) => {
@@ -211,6 +231,23 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
       setSlotSaveError(err?.message || 'Unable to save video payload defaults.');
     } finally {
       setSlotSavingKey(current => current === field ? null : current);
+    }
+  };
+
+  const saveWorkflowMode = async (next: ShotWorkflowMode) => {
+    if (!context || !onSaveWorkflowMode || next === effectiveWorkflowMode) return;
+    const previous = effectiveWorkflowMode;
+    setOptimisticWorkflowMode(next);
+    setWorkflowSaving(true);
+    setWorkflowSaveError(null);
+    try {
+      await onSaveWorkflowMode(next);
+      onRefresh?.();
+    } catch (err: any) {
+      setOptimisticWorkflowMode(previous);
+      setWorkflowSaveError(err?.message || 'Unable to save workflow mode.');
+    } finally {
+      setWorkflowSaving(false);
     }
   };
 
@@ -328,6 +365,41 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
                 <div>Storyboard recipe: {storyboardRecipe || <EmptyValue />}</div>
                 <div>Video recipe: {videoRecipe || <EmptyValue />}</div>
                 <div>Preset: {context.project.presetLabel || context.project.presetKey || <EmptyValue />}</div>
+              </div>
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-zinc-400">Shot mode</span>
+                  <span className="text-[11px] text-zinc-500">
+                    effective {context.shot.effectiveWorkflowMode || 'unknown'}
+                    {workflowSaving ? ' · saving…' : ''}
+                  </span>
+                </div>
+                <div className="inline-flex rounded-md border border-white/[0.08] bg-white/[0.03] p-0.5">
+                  {WORKFLOW_MODE_OPTIONS.map(option => {
+                    const active = effectiveWorkflowMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => saveWorkflowMode(option.value)}
+                        disabled={workflowSaving || !onSaveWorkflowMode}
+                        title={option.title}
+                        className={`min-w-[74px] rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-wait ${
+                          active
+                            ? 'bg-white text-black'
+                            : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {workflowSaveError && (
+                  <div className="rounded-md border border-red-400/15 bg-red-500/[0.06] px-2 py-1.5 text-[11px] leading-relaxed text-red-200">
+                    {workflowSaveError}
+                  </div>
+                )}
               </div>
             </div>
 

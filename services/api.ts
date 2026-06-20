@@ -1161,6 +1161,20 @@ export const updateShot = async (projectId: string, shotId: string, updates: Rec
   return handleResponse(res);
 };
 
+export type ShotWorkflowMode = 'auto' | 'storyboard' | 'keyframe';
+
+export const applyShotWorkflowModes = async (
+  projectId: string,
+  shots: Array<{ shotId: string; workflowMode: ShotWorkflowMode; note?: string }>,
+) => {
+  const res = await authFetch(`${API}/director/apply/shot-workflow-modes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, shots }),
+  });
+  return handleResponse(res);
+};
+
 export const lockShot = async (projectId: string, shotId: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/lock`, { method: 'POST' });
   return handleResponse(res);
