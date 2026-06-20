@@ -4,6 +4,7 @@ import useStore from './store';
 import Header from './Header';
 import Ruler from './Ruler';
 import Playhead from './Playhead';
+import MarkersOverlay from './MarkersOverlay';
 import TransitionOverlay from './TransitionOverlay';
 import { Audio, Image, Text, Video } from './items';
 import { TIMELINE_CANVAS_ID } from './utils';
@@ -93,6 +94,7 @@ const Timeline: React.FC = () => {
     <div style={{ position: 'relative', overflow: 'hidden', background: '#0f0f13' }}>
       <Header />
       <Ruler scrollLeft={scrollLeft} onClick={onClickRuler} />
+      <MarkersOverlay scrollLeft={scrollLeft} />
       <Playhead scrollLeft={scrollLeft} />
       <div style={{ display: 'flex' }}>
         <div style={{ width: 40, flex: 'none' }} />

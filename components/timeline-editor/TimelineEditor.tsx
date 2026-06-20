@@ -369,6 +369,25 @@ const TimelineEditor: React.FC<Props> = ({
       setInitialSources([], []);
     };
   }, [initialAudioClips, initialClips, projectId, setInitialSources, setProjectId]);
+
+  // Hydrate editor-only markers for this project from localStorage. Writes go
+  // through the keyboard handler, so this effect only loads (no save race).
+  useEffect(() => {
+    if (!projectId) {
+      useStore.getState().setMarkers([]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(`mirage:timeline-markers:${projectId}`);
+      const parsed = raw ? JSON.parse(raw) : [];
+      useStore.getState().setMarkers(
+        Array.isArray(parsed) ? parsed.filter((m) => typeof m === 'number') : [],
+      );
+    } catch {
+      useStore.getState().setMarkers([]);
+    }
+  }, [projectId]);
+
   const [sidePanel, setSidePanel] = useState<'effects' | null>(null);
   useTimelineEvents();
 
@@ -1057,6 +1076,42 @@ const TimelineEditor: React.FC<Props> = ({
         if (next === current) return;
         if (p.isPlaying?.()) p.pause();
         p.seekTo(next);
+        return;
+      }
+
+      // M toggles a marker at the playhead (removes one already within a frame).
+      // Markers persist per project in localStorage, never in the render snapshot.
+      if (!mod && (e.key === 'm' || e.key === 'M')) {
+        const st = useStore.getState();
+        const p = st.playerRef?.current;
+        if (!p) return;
+        const ms = ((p.getCurrentFrame?.() ?? 0) * 1000) / st.fps;
+        const tol = 1000 / st.fps;
+        const existing = st.markers.find((m) => Math.abs(m - ms) <= tol);
+        const next = existing != null
+          ? st.markers.filter((m) => m !== existing)
+          : [...st.markers, ms].sort((a, b) => a - b);
+        st.setMarkers(next);
+        if (st.projectId) {
+          try { localStorage.setItem(`mirage:timeline-markers:${st.projectId}`, JSON.stringify(next)); } catch { /* ignore */ }
+        }
+        e.preventDefault();
+        return;
+      }
+
+      // , / . jump the playhead to the previous / next marker.
+      if (!mod && (e.key === ',' || e.key === '.')) {
+        const st = useStore.getState();
+        const p = st.playerRef?.current;
+        if (!p || !st.markers.length) return;
+        const ms = ((p.getCurrentFrame?.() ?? 0) * 1000) / st.fps;
+        const target = e.key === '.'
+          ? st.markers.find((m) => m > ms + 1)
+          : [...st.markers].reverse().find((m) => m < ms - 1);
+        if (target == null) return;
+        if (p.isPlaying?.()) p.pause();
+        p.seekTo((target * st.fps) / 1000);
+        e.preventDefault();
         return;
       }
 

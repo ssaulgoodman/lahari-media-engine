@@ -34,6 +34,11 @@ interface ITimelineStore {
   transitionsMap: Record<string, ITransition>;
   trackItemsMap: Record<string, ITrackItem>;
   activeIds: string[];
+  // Editor-only timecode markers (ms). Persisted to localStorage per project,
+  // never written into the render-authoritative snapshot, so the renderer
+  // never sees them — they are a planning aid for cutting to the beat.
+  markers: number[];
+  setMarkers: (markers: number[]) => void;
   size: { width: number; height: number };
   // Mirrors stateManager.getStateHistory() — populated by a subscribeToHistory
   // wiring in TimelineEditor. Exposed on the store so consumers (StepRender
@@ -110,6 +115,8 @@ const useStore = create<ITimelineStore>((set, get) => ({
   transitionsMap: {},
   trackItemsMap: {},
   activeIds: [],
+  markers: [],
+  setMarkers: (markers) => set({ markers }),
   size: { width: 1920, height: 1080 },
   canUndo: false,
   canRedo: false,
