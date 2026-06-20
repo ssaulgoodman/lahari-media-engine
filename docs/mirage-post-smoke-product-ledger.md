@@ -531,3 +531,7 @@ repeatable human/agent product surface.
   Studio's shared payload inspector can now toggle excludable storyboard refs from the Images
   chips, writing the existing `excludedRefs.storyboard` shot field through the normal owned shot
   update path.
+- 2026-06-20 · payload origin vocabulary landed locally · — · The shared prompt payload inspector
+  now labels slots and images with the same first-class vocabulary: `default`, `saved override`,
+  `one-off`, or `excluded`. The raw source/edit path remains available, but humans no longer have
+  to infer the meaning of a payload chip from internal source strings.

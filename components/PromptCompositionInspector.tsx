@@ -21,6 +21,8 @@ type PromptCompositionInspectorProps = {
   }>;
 };
 
+type OriginKind = 'default' | 'saved' | 'one-off' | 'excluded';
+
 const textForSegment = (segment: PromptCompositionSegment): string => {
   if (typeof segment.text === 'string') return segment.text;
   if (segment.value === undefined || segment.value === null) return '';
@@ -37,6 +39,44 @@ const segmentLabel = (segment: PromptCompositionSegment, index: number) =>
 
 const imageLabel = (image: PromptCompositionImage, index: number) =>
   image.label || image.role || image.source || `Image ${index + 1}`;
+
+const sourceLooksOneOff = (source?: string) =>
+  /\b(contextOverrides?|call override|promptOverride|artist note)\b/i.test(source || '');
+
+const segmentOrigin = (
+  segment: PromptCompositionSegment,
+  control?: { value?: boolean },
+): OriginKind => {
+  if (segment.included === false) return 'excluded';
+  if (control && typeof control.value === 'boolean') return 'saved';
+  if (sourceLooksOneOff(segment.source)) return 'one-off';
+  return 'default';
+};
+
+const imageOrigin = (
+  image: PromptCompositionImage,
+  control?: { excluded?: boolean },
+): OriginKind => {
+  if (image.included === false || control?.excluded) return 'excluded';
+  if (sourceLooksOneOff(image.source)) return 'one-off';
+  return 'default';
+};
+
+const OriginPill: React.FC<{ origin: OriginKind }> = ({ origin }) => {
+  const label = origin === 'saved' ? 'saved override' : origin;
+  const tone = origin === 'excluded'
+    ? 'border-amber-400/20 bg-amber-500/10 text-amber-200'
+    : origin === 'saved'
+      ? 'border-sky-400/20 bg-sky-500/10 text-sky-200'
+      : origin === 'one-off'
+        ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
+        : 'border-white/[0.07] bg-white/[0.025] text-zinc-500';
+  return (
+    <span className={`rounded border px-1 py-0.5 text-[9px] uppercase tracking-wide ${tone}`}>
+      {label}
+    </span>
+  );
+};
 
 export const PromptCompositionInspector: React.FC<PromptCompositionInspectorProps> = ({
   title,
@@ -91,10 +131,12 @@ export const PromptCompositionInspector: React.FC<PromptCompositionInspectorProp
                     const excludableKey = typeof image.excludableKey === 'string' ? image.excludableKey : '';
                     const control = excludableKey ? imageControls?.[excludableKey] : undefined;
                     const isExcluded = image.included === false || control?.excluded;
+                    const origin = imageOrigin(image, control);
                     const content = (
                       <>
                         <span className="font-mono text-zinc-500">{(image as any).ref || `#${index + 1}`}</span>
                         <span className="truncate">{imageLabel(image, index)}</span>
+                        <OriginPill origin={origin} />
                         {control && (
                           <span className="ml-0.5 rounded border border-white/[0.06] px-1 text-[9px] uppercase tracking-wide text-zinc-500">
                             {isExcluded ? '+' : '×'}
@@ -110,7 +152,7 @@ export const PromptCompositionInspector: React.FC<PromptCompositionInspectorProp
                     const titleText = [image.source, image.assetId, control?.title].filter(Boolean).join(' · ');
                     return control ? (
                       <button
-                      key={`${image.assetId || image.url || index}-${index}`}
+                        key={`${image.assetId || image.url || index}-${index}`}
                         type="button"
                         disabled={control.disabled}
                         onClick={control.onToggle}
@@ -147,12 +189,13 @@ export const PromptCompositionInspector: React.FC<PromptCompositionInspectorProp
                   {segments.map((segment, index) => {
                     const body = textForSegment(segment);
                     const control = segment.slot ? segmentControls?.[segment.slot] : undefined;
+                    const origin = segmentOrigin(segment, control);
                     return (
                       <details key={`${segment.slot || segment.label || index}-${index}`} className="rounded border border-white/[0.06] bg-black/10">
                         <summary className="list-none cursor-pointer px-2 py-1.5 flex items-center justify-between gap-2 hover:bg-white/[0.025] transition-colors">
                           <span className={`min-w-0 flex items-center gap-1.5 text-[11px] ${segment.included === false ? 'text-zinc-500' : 'text-zinc-300'}`}>
                             <span className="font-medium truncate">{segmentLabel(segment, index)}</span>
-                            {segment.included === false && <span className="text-[10px] text-zinc-500">excluded</span>}
+                            <OriginPill origin={origin} />
                           </span>
                           {segment.source && <span className="text-[10px] text-zinc-600 font-mono truncate max-w-[45%]">{segment.source}</span>}
                         </summary>
