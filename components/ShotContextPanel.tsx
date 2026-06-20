@@ -1,5 +1,7 @@
-import React from 'react';
-import type { ShotContext, ShotContextPayloadSummary } from '../services/api';
+import React, { useEffect, useState } from 'react';
+import { describePrompt } from '../services/api';
+import type { PromptDescription, PromptDescriptionKind, ShotContext, ShotContextPayloadSummary } from '../services/api';
+import { PromptCompositionInspector } from './PromptCompositionInspector';
 
 type ShotContextPanelProps = {
   context: ShotContext | null;
@@ -62,7 +64,12 @@ const hashPreview = (hash?: string | null) => hash ? hash.slice(0, 8) : null;
 // Compact payload status only. The full provenance-annotated segment breakdown
 // lives in the dedicated PromptCompositionInspector (describe_prompt), so this
 // panel does not re-render the segment list — it reports captured-yet + in/out.
-const PayloadStatus: React.FC<{ title: string; payload?: ShotContextPayloadSummary }> = ({ title, payload }) => {
+const PayloadStatus: React.FC<{
+  title: string;
+  payload?: ShotContextPayloadSummary;
+  onInspect?: () => void;
+  inspecting?: boolean;
+}> = ({ title, payload, onInspect, inspecting }) => {
   const segments = payload?.segments || [];
   const included = segments.filter(segment => segment.included !== false).length;
   const excluded = segments.length - included;
@@ -76,16 +83,28 @@ const PayloadStatus: React.FC<{ title: string; payload?: ShotContextPayloadSumma
           <span className="text-[11px] font-medium text-zinc-200">{title}</span>
           <Chip tone={composed ? 'good' : 'muted'}>{composed ? 'composed' : 'not captured'}</Chip>
         </div>
-        {payload?.generatedAt && (
-          <span className="text-[11px] text-zinc-500">{new Date(payload.generatedAt).toLocaleString()}</span>
-        )}
+        <div className="flex items-center gap-2">
+          {payload?.generatedAt && (
+            <span className="text-[11px] text-zinc-500">{new Date(payload.generatedAt).toLocaleString()}</span>
+          )}
+          {onInspect && (
+            <button
+              type="button"
+              onClick={onInspect}
+              disabled={inspecting}
+              className="rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-wide text-zinc-300 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-wait disabled:opacity-50"
+            >
+              {inspecting ? 'Loading' : 'Inspect'}
+            </button>
+          )}
+        </div>
       </div>
       {composed ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <Chip tone="muted">{included} slots in</Chip>
           {excluded > 0 && <Chip tone="warn">{excluded} out</Chip>}
           <Chip tone="muted">{images} images</Chip>
-          <span className="text-[11px] text-zinc-500">open in describe_prompt for the full payload</span>
+          <span className="text-[11px] text-zinc-500">Inspect for the full payload</span>
         </div>
       ) : (
         <p className="text-[11px] leading-relaxed text-zinc-400">
@@ -106,6 +125,36 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
   const storyboardEligibility = context?.eligibility?.storyboard;
   const videoEligibility = context?.eligibility?.video;
   const nextActions = context?.recommendedNextActions || [];
+  const [activeDescription, setActiveDescription] = useState<PromptDescription | null>(null);
+  const [descriptionLoadingKey, setDescriptionLoadingKey] = useState<string | null>(null);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setActiveDescription(null);
+    setDescriptionLoadingKey(null);
+    setDescriptionError(null);
+  }, [context?.project.id, context?.shot.id]);
+
+  const inspectPrompt = async (kind: PromptDescriptionKind, versionId?: string | null) => {
+    if (!context) return;
+    const loadingKey = versionId ? `${kind}:${versionId}` : kind;
+    setDescriptionLoadingKey(loadingKey);
+    setDescriptionError(null);
+    setActiveDescription(null);
+    try {
+      const description = await describePrompt(
+        context.project.id,
+        context.shot.id,
+        kind,
+        kind === 'storyboard_render' && versionId ? { versionId } : {},
+      );
+      setActiveDescription(description);
+    } catch (err: any) {
+      setDescriptionError(err?.message || 'Unable to inspect prompt payload.');
+    } finally {
+      setDescriptionLoadingKey(current => current === loadingKey ? null : current);
+    }
+  };
 
   const blockers: Array<{ surface: string; prerequisites: string[] }> = [];
   if (storyboardEligibility && storyboardEligibility.canRun === false) {
@@ -251,9 +300,42 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
 
           {/* Compact payload status; full segment audit lives in describe_prompt. */}
           <div className="grid gap-3 xl:grid-cols-2">
-            <PayloadStatus title="Storyboard payload" payload={context.promptPayloads?.storyboardRender} />
-            <PayloadStatus title="Video payload" payload={context.promptPayloads?.video} />
+            <PayloadStatus
+              title="Storyboard payload"
+              payload={context.promptPayloads?.storyboardRender}
+              onInspect={() => inspectPrompt('storyboard_render', context.promptPayloads?.storyboardRender?.versionId || context.assets?.storyboardVersionId || null)}
+              inspecting={descriptionLoadingKey === `storyboard_render:${context.promptPayloads?.storyboardRender?.versionId || context.assets?.storyboardVersionId || ''}` || descriptionLoadingKey === 'storyboard_render'}
+            />
+            <PayloadStatus
+              title="Video payload"
+              payload={context.promptPayloads?.video}
+              onInspect={() => inspectPrompt('video')}
+              inspecting={descriptionLoadingKey === 'video'}
+            />
           </div>
+
+          {(descriptionError || activeDescription || descriptionLoadingKey) && (
+            <div className="space-y-2">
+              {descriptionError && (
+                <div className="rounded-lg border border-red-400/15 bg-red-500/[0.06] px-3 py-2 text-[11px] leading-relaxed text-red-200">
+                  {descriptionError}
+                </div>
+              )}
+              {activeDescription ? (
+                <PromptCompositionInspector
+                  title={`${activeDescription.kind === 'storyboard_render' ? 'Storyboard' : 'Video'} payload inspector`}
+                  composition={activeDescription.composition || null}
+                  note={activeDescription.note}
+                  generatedAt={activeDescription.generatedAt}
+                  source={activeDescription.source}
+                />
+              ) : descriptionLoadingKey ? (
+                <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-zinc-400">
+                  Loading payload inspector...
+                </div>
+              ) : null}
+            </div>
+          )}
 
           {/* Engine internals — collapsed by default; not artist-facing. */}
           <details className="group rounded-lg border border-white/[0.05] bg-black/10">
