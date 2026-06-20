@@ -565,3 +565,54 @@ repeatable human/agent product surface.
   now labels slots and images with the same first-class vocabulary: `default`, `saved override`,
   `one-off`, or `excluded`. The raw source/edit path remains available, but humans no longer have
   to infer the meaning of a payload chip from internal source strings.
+
+## Render Timeline — Editor Capability Audit (2026-06-20)
+
+Artists spend real time in the render timeline; it should be decent-to-world-class. Audit of the
+current `components/timeline-editor/*` toolkit (built on `@designcombo` timeline/state/player)
+against what a competent NLE provides. **Scoping note:** several gaps below may be partially
+supported by `@designcombo` already and just unwired — check the SDK before building each item,
+do not rebuild what the library gives us.
+
+**What we have today:** video/image/audio tracks; split-at-playhead (`S`); delete + ripple-delete
+(`Del`/`Backspace`); clip drag + trim; session undo/redo (`Cmd+Z` / `Cmd+Shift+Z`); play/pause
+(`Space`); draggable playhead with timecode chip; multi-step zoom slider + Fit; per-clip volume +
+muted flag; a `fade` transition; per-clip filter effects (brightness/blur/opacity/contrast/
+saturate/grayscale/sepia/hueRotate/invert); media library + upload; server-backed
+save/restore/reset with version history.
+
+### Tier 1 — music-video table stakes (felt daily, highest leverage)
+- **Audio waveforms** on audio + unmuted video clips. None exist today. You cannot cut to the beat
+  without seeing the waveform — this is the core motion of a music-video edit. Single highest-value item.
+- **Snapping / magnetic edges.** No snap logic exists. Snap clips and the playhead to clip edges,
+  the playhead, and markers, with a toggle and a momentary-disable modifier (hold to bypass).
+- **Markers.** None exist. Drop (`M`), navigate prev/next, and ideally auto beat-markers derived
+  from the song so artists can plan cuts to musical structure.
+- **Clip thumbnails / filmstrip.** Clips render as plain colored blocks. Show poster/filmstrip
+  frames so artists can see a clip's content at a glance.
+- **Frame-accurate navigation.** Left/Right step one frame, Shift+arrow jumps, Home/End to ends,
+  and jump-between-cut-points (`[` / `]` or Up/Down). Today only Space and playhead drag exist.
+
+### Tier 2 — standard NLE editing operations
+- **Copy / Cut / Paste / Duplicate** clips (`Cmd+C/X/V/D`). None exist.
+- **Marquee/box select + Shift-click range + Select-all (`Cmd+A`).** `activeIds` is already an
+  array (multi-select is supported in data); the selection affordances are missing.
+- **Right-click context menu** on clips (split / delete / duplicate / speed / properties). No
+  `onContextMenu` handlers exist anywhere in the editor.
+- **Arrow-key nudge** of the selected clip (1 frame; Shift = larger step).
+- **Ripple / roll / slip / slide trim** and an explicit close-gap. Only basic trim + ripple-delete exist.
+- **Audio fade handles** (drag in/out clip corners), volume rubber-band/keyframes, and audio
+  scrubbing while dragging the playhead. Only a static per-clip volume exists.
+
+### Tier 3 — track management + creative surface
+- **Track headers** with mute/solo/lock, add/remove/reorder tracks, adjustable track height.
+  Today muted is per-clip; there is no per-track solo/lock or track management.
+- **Clip speed / time-remap UI.** `playbackRate` is plumbed through items and render eligibility
+  but is hardcoded to 1 and never exposed to the artist.
+- **Clip transform** (position/scale/rotate/crop) for PiP/reframe. NOTE: this also needs renderer
+  work — `hasNonDefaultLayout` is currently a stub returning false and `Composition.tsx` renders
+  every clip as `AbsoluteFill`/`objectFit:contain`, ignoring layout. This is a render-pipeline
+  change, not just a timeline UI add.
+- **Text / title overlays** (no text track today).
+- **In/out range + loop playback** for reviewing a section.
+- **Keyboard-shortcut cheat sheet** for discoverability (the shortcuts that exist are invisible).
