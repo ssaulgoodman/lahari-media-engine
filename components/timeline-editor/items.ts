@@ -112,6 +112,9 @@ export class Audio extends Trimmable {
   constructor(props: any) {
     super(props);
     assignTrimmableProps(this, props);
+    // Caching off: the waveform loads async, so a cached pre-load render would
+    // never repaint when the bars arrive (matches upstream's Audio item).
+    (this as any).objectCaching = false;
     this.loadWaveform();
   }
 
