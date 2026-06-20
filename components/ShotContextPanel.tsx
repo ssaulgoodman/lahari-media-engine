@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { describePrompt } from '../services/api';
 import type { PromptDescription, PromptDescriptionKind, ShotContext, ShotContextPayloadSummary } from '../services/api';
 import { PromptCompositionInspector } from './PromptCompositionInspector';
@@ -128,8 +128,10 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
   const [activeDescription, setActiveDescription] = useState<PromptDescription | null>(null);
   const [descriptionLoadingKey, setDescriptionLoadingKey] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
+  const inspectRequestId = useRef(0);
 
   useEffect(() => {
+    inspectRequestId.current += 1;
     setActiveDescription(null);
     setDescriptionLoadingKey(null);
     setDescriptionError(null);
@@ -137,6 +139,8 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
 
   const inspectPrompt = async (kind: PromptDescriptionKind, versionId?: string | null) => {
     if (!context) return;
+    const requestId = inspectRequestId.current + 1;
+    inspectRequestId.current = requestId;
     const loadingKey = versionId ? `${kind}:${versionId}` : kind;
     setDescriptionLoadingKey(loadingKey);
     setDescriptionError(null);
@@ -148,11 +152,15 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
         kind,
         kind === 'storyboard_render' && versionId ? { versionId } : {},
       );
+      if (inspectRequestId.current !== requestId) return;
       setActiveDescription(description);
     } catch (err: any) {
+      if (inspectRequestId.current !== requestId) return;
       setDescriptionError(err?.message || 'Unable to inspect prompt payload.');
     } finally {
-      setDescriptionLoadingKey(current => current === loadingKey ? null : current);
+      if (inspectRequestId.current === requestId) {
+        setDescriptionLoadingKey(current => current === loadingKey ? null : current);
+      }
     }
   };
 
