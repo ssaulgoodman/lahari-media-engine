@@ -27,6 +27,25 @@ const VIDEO_SEGMENT_SLOT_FIELDS: Record<string, keyof VideoPromptSlotDefaults> =
   audio: 'includeAudio',
 };
 
+// Render every payload slot, including the ones inheriting the default — an
+// invisible "default" slot is still hidden prompt behavior.
+const VIDEO_SLOT_ORDER: Array<keyof VideoPromptSlotDefaults> = [
+  'includeFormat',
+  'includeShotBeat',
+  'includeRefs',
+  'includeCutPlan',
+  'includeAudio',
+];
+
+// Which surface(s) a ref is held out of, drawn from the same excludedRefs the
+// storyboard/video composers read. '' means the ref binds everywhere.
+const excludeLabel = (storyboard?: boolean, video?: boolean): string => {
+  if (storyboard && video) return 'storyboard + video';
+  if (storyboard) return 'storyboard';
+  if (video) return 'video';
+  return '';
+};
+
 const WORKFLOW_MODE_OPTIONS: Array<{ value: ShotWorkflowMode; label: string; title: string }> = [
   { value: 'auto', label: 'Auto', title: 'Follow the project/model default for this shot.' },
   { value: 'storyboard', label: 'Storyboard', title: 'Force storyboard-board video generation for this shot.' },
@@ -56,12 +75,6 @@ const SectionLabel: React.FC<{ children: React.ReactNode; aside?: React.ReactNod
 );
 
 const EmptyValue = () => <span className="text-zinc-500">none</span>;
-
-const summarizeSlotValue = (value: boolean | null | undefined) => {
-  if (value === true) return 'on';
-  if (value === false) return 'off';
-  return 'default';
-};
 
 const recipeLabel = (config?: Record<string, unknown>) => {
   const recipe = config?.workflowRecipe;
@@ -152,7 +165,6 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
   const contextWorkflowMode = workflowModeFromContext(context);
   const [optimisticWorkflowMode, setOptimisticWorkflowMode] = useState<ShotWorkflowMode | null>(null);
   const effectiveWorkflowMode = optimisticWorkflowMode || contextWorkflowMode;
-  const slotEntries = Object.entries(effectiveVideoPromptSlots);
   const storyboardRecipe = recipeLabel(context?.workflowConfig?.storyboard);
   const videoRecipe = recipeLabel(context?.workflowConfig?.video);
   const refs = context?.refs;
@@ -413,37 +425,50 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
                 </Chip>
               </div>
               <div className="space-y-1 text-[11px] text-zinc-400">
-                {(refs?.cast || []).slice(0, 3).map(cast => (
-                  <div key={cast.id}>
-                    {cast.name || cast.id}: {cast.hasReference ? 'ref' : 'no ref'}
-                    {cast.storyboardExcluded || cast.videoExcluded ? ' · excluded somewhere' : ''}
-                  </div>
-                ))}
+                {(refs?.cast || []).slice(0, 3).map(cast => {
+                  const excluded = excludeLabel(cast.storyboardExcluded, cast.videoExcluded);
+                  return (
+                    <div key={cast.id}>
+                      {cast.name || cast.id}: {cast.hasReference ? 'ref' : 'no ref'}
+                      {excluded && <span className="text-amber-300/80"> · held out of {excluded}</span>}
+                    </div>
+                  );
+                })}
                 {(refs?.cast || []).length > 3 && <div className="text-zinc-500">+{(refs?.cast || []).length - 3} more cast refs</div>}
+                {refs?.environment && excludeLabel(refs.environment.storyboardExcluded, refs.environment.videoExcluded) && (
+                  <div>
+                    {refs.environment.name || 'environment'}:
+                    <span className="text-amber-300/80"> held out of {excludeLabel(refs.environment.storyboardExcluded, refs.environment.videoExcluded)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {(slotEntries.length > 0 || slotSavingKey || slotSaveError) && (
-            <div className="rounded-lg border border-white/[0.06] bg-black/20 p-3 space-y-2">
-              <SectionLabel aside={slotSavingKey ? `Saving ${SLOT_LABELS[slotSavingKey] || slotSavingKey}…` : 'Persistent next-run defaults'}>Video prompt slots</SectionLabel>
-              <div className="flex flex-wrap gap-1.5">
-                {slotEntries.length > 0 ? slotEntries.map(([key, slot]) => {
-                  const value = summarizeSlotValue(slot);
-                  return (
-                    <Chip key={key} tone={value === 'off' ? 'warn' : value === 'on' ? 'good' : 'muted'}>
-                      {SLOT_LABELS[key] || key}: {value}
-                    </Chip>
-                  );
-                }) : <Chip tone="muted">following workflow defaults</Chip>}
-              </div>
-              {slotSaveError && (
-                <div className="rounded-md border border-red-400/15 bg-red-500/[0.06] px-2 py-1.5 text-[11px] leading-relaxed text-red-200">
-                  {slotSaveError}
-                </div>
-              )}
+          <div className="rounded-lg border border-white/[0.06] bg-black/20 p-3 space-y-2">
+            <SectionLabel aside={slotSavingKey ? `Saving ${SLOT_LABELS[slotSavingKey] || slotSavingKey}…` : 'saved = this shot overrides the default'}>Video prompt slots</SectionLabel>
+            <div className="flex flex-wrap gap-1.5">
+              {VIDEO_SLOT_ORDER.map((key) => {
+                const saved = typeof effectiveVideoPromptSlots[key] === 'boolean';
+                const on = effectiveVideoPromptSlots[key] === true;
+                const tone = !saved ? 'muted' : on ? 'good' : 'warn';
+                const editPath = context?.workflowConfig?.videoPromptSlots?.[key]?.editPath || undefined;
+                return (
+                  <Chip key={key} tone={tone}>
+                    <span title={editPath}>
+                      {SLOT_LABELS[key] || key}: {saved ? (on ? 'on' : 'off') : 'default'}
+                      {saved && <span className="ml-1 text-[10px] uppercase tracking-wide opacity-70">saved</span>}
+                    </span>
+                  </Chip>
+                );
+              })}
             </div>
-          )}
+            {slotSaveError && (
+              <div className="rounded-md border border-red-400/15 bg-red-500/[0.06] px-2 py-1.5 text-[11px] leading-relaxed text-red-200">
+                {slotSaveError}
+              </div>
+            )}
+          </div>
 
           {/* Compact payload status; full segment audit lives in describe_prompt. */}
           <div className="grid gap-3 xl:grid-cols-2">

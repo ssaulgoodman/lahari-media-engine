@@ -501,3 +501,27 @@ repeatable human/agent product surface.
   8de2dc1, 4323d3f · Studio now has per-shot workflow mode controls, shot-row realtime refresh
   for agent/MCP generations, summary-first video dry-runs, and guarded Space play/pause plus
   clearer render readiness/status in the render timeline.
+- 2026-06-20 · legibility lane scoped down after grounding · — · Audited current state before
+  starting buckets 2 (storyboard composer maturity) + 3 (self-explaining shot state). Finding:
+  the BACKENDS for both largely already exist from the landed slices, so neither is a build from
+  scratch. (a) Storyboard render composition is already provenance-annotated
+  (`storyboardPromptComposition.ts`: segments with source/editPath/included, images with
+  assetId/excludableKey) and readable via `describe_prompt({kind:'storyboard_render'})`. (b)
+  `get_shot_context` already returns per-slot `videoPromptSlots.{value,source,editPath}`,
+  storyboard ref-exclusion state (`excludedRefs.storyboard` + `shotRefKeyExcluded`), storyboard
+  provenance (`hasComposition`, version, locked), blockers/prerequisites, and a storyboard-aware
+  next-action ladder. The remaining work is therefore mostly FRONTEND legibility plus one real
+  manipulability gap, NOT a composer rewrite. Slice ladder:
+  - L1 (frontend) Self-explaining panel completion: surface the slot `source`/`editPath` the
+    panel currently drops (saved-override vs inherited-default chips), show storyboard ref bind/
+    exclude state, and a storyboard provenance line (version/locked/hasComposition). Already-
+    returned data; no backend.
+  - L2 (frontend+reuse) Storyboard manipulability parity: storyboard inspector ref-toggle chips
+    that write the existing `excludedRefs.storyboard` mechanism, mirroring video slot controls.
+    Reuses existing persistence; no new column.
+  - L3 (frontend) First-class payload chip vocabulary (#1): one shared origin tag —
+    default / saved override / one-off (dry-run only) / excluded — used in both the panel chips
+    and the inspector segments, reading existing `source`/`included`.
+  - L4 (backend, optional refinement) Slot source precedence detail: distinguish recipe-default
+    vs engine-default in the slot `source` (today it is binary saved-override vs composer default).
+    Only if L1-L3 surface a real ambiguity.
