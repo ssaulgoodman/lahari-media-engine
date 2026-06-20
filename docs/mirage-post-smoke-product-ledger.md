@@ -528,6 +528,9 @@ repeatable human/agent product surface.
 - 2026-06-20 · media library drawer motion landed locally · — · Render's media drawer now
   opens/closes with a short eased transition instead of snapping between the handle and full
   panel, preserving the same library data/loading behavior.
+- 2026-06-20 · render playhead polish landed locally · — · The timeline playhead is now a
+  larger draggable target with a visible head/stem and drag-time readout, replacing the old
+  bare 2px line while preserving the existing seek behavior.
 - 2026-06-20 · legibility lane scoped down after grounding · — · Audited current state before
   starting buckets 2 (storyboard composer maturity) + 3 (self-explaining shot state). Finding:
   the BACKENDS for both largely already exist from the landed slices, so neither is a build from
