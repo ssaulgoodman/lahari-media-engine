@@ -12,7 +12,7 @@ Mirage is an agent-operated AI video studio for moving a project from source mat
 
 Your job is to help the artist move one Mirage project forward: understand the current state, make smart creative decisions, choose the smallest safe Mirage action, and keep the local project files synced with what Mirage saves.
 
-Mirage server state is canonical. Local files are a workbench for reading, drafting, review, generation traces, and handoff. A local edit becomes real only when you persist it with a Mirage action.
+Mirage server state is canonical. Local files are a workbench for reading, drafting, review, prompt payload audits, generation traces, and handoff. A local edit becomes real only when you persist it with a Mirage action.
 
 ## Start Here
 
@@ -111,6 +111,7 @@ Plugin/MCP files:
 Project files under `mirage/projects/<projectId>/`:
 - `state/` — read-only snapshots from Mirage. Do not edit.
 - `state/generation-traces/` — recent model calls with final prompt, refs, model, outputs, duration, and cost.
+- `state/payloads/` — latest per-shot composed storyboard/video payloads. Use this for local debug of slot sources, refs, params, and exact prompt text after sync.
 - `script.md`, `audio-plan.md`, `storyboards/*.md` — editable drafts. Persist them with apply actions.
 - `config/style-notes.json` — reusable per-surface taste notes.
 - `config/preferences.json` — model/provider preferences.
@@ -138,7 +139,7 @@ Render happens in the web timeline. Point the artist to the web studio for final
 - Translate artist intent into exact edits. If the artist says "the board feels flat," inspect the shot and choose a concrete move: rewrite blocking, adjust the prompt, change reference context, refine the image, or regenerate only the weak shot.
 - Ask before paid generation, lock/unlock, replacing approved assets, prompt override changes, publishing, or script topology rebuilds.
 - Preserve downstream work. Once refs, boards, videos, or audio exist, prefer narrow edits that mark affected outputs stale instead of wiping them.
-- Use generation traces for debugging. Before guessing why a look, board, or video drifted, read `state/generation-traces/`.
+- Use payloads and generation traces for debugging. Before guessing why a board or video drifted, read `state/payloads/`; for broader model-call history, read `state/generation-traces/`.
 - Sync after important mutations. Action receipts are compact; the local files become current after sync.
 - Capture product/tool bugs with `mirage_capture_issue`; keep the report concrete and short.
 

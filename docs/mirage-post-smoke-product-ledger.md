@@ -319,7 +319,7 @@ project graph or full prompt bodies.
 
 The useful missing artifact is a compact, durable local record per generated shot:
 
-`mirage/projects/<projectId>/state/generation-traces/<shot>-final-payload.json`
+`mirage/projects/<projectId>/state/payloads/{video,storyboard}/<shot>.json`
 
 or a paired `prompt-recipe.md` with:
 
@@ -334,6 +334,11 @@ or a paired `prompt-recipe.md` with:
 
 **Done when:** after a generation, an agent can diagnose "why did this happen?" from one local
 artifact instead of re-querying project state, job status, and prompt composition separately.
+
+**2026-06-20 slice:** full notebook sync now writes latest per-shot `state/payloads/video/*.json`
+and `state/payloads/storyboard/*.json` artifacts from `generation_attempts.request_summary` and
+`storyboard_versions.metadata`. These are local/debug copies only; live Studio/MCP remains the
+authoring truth.
 
 **Workbench role after smoke:** useful for audit/export/debug and large-text handoff; not the
 primary creative loop. Do not make every Studio/MCP action depend on a fresh local sync. The

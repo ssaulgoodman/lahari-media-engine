@@ -19,6 +19,7 @@ import {
 import { buildProjectActionList } from './plans.js';
 import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromptOverrideKind } from '../projectConfig.js';
 import { getCalls, type XRayEntry, type XRayReference } from '../../xray.js';
+import { selectAll } from '../../database.js';
 import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
 import { buildAudioPlanMarkdownDraft } from './audioPlanMarkdown.js';
 import { buildStoryboardSceneMarkdownDraft, storyboardSceneDraftPath } from './storyboardMarkdown.js';
@@ -210,6 +211,38 @@ const traceFileName = (call: XRayEntry): string => {
   return `${timestamp}-${stage}-${call.id.slice(0, 8)}.md`;
 };
 
+const shotPayloadFileSlug = (sceneIndex: number, shotIndex: number, shotId: string): string => {
+  const label = `s${sceneIndex + 1}-${shotIndex + 1}`;
+  return `${label}-${shotId.slice(0, 8)}`;
+};
+
+const safeParseObject = (value: unknown): Record<string, any> => {
+  if (!value) return {};
+  if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, any>;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+};
+
+const safeParseArray = (value: unknown): unknown[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
 const fenced = (value: string, language = ''): string => {
   const body = value || '';
   const ticks = body.match(/`{3,}/g)?.reduce((max, match) => Math.max(max, match.length), 3) || 3;
@@ -306,6 +339,151 @@ const buildGenerationTraceFiles = async (project: Project, limit = 50): Promise<
       ].join('\n'),
     }];
   }
+};
+
+type PromptPayloadArtifact = {
+  kind: 'video' | 'storyboard_render';
+  projectId: string;
+  shotId: string;
+  shotLabel: string;
+  source: string;
+  capturedAt: string | null;
+  provider?: string | null;
+  model?: string | null;
+  status?: string | null;
+  chargeStatus?: string | null;
+  providerRequestId?: string | null;
+  outputAssetIds?: string[];
+  storyboardVersionId?: string | null;
+  storyboardAssetId?: string | null;
+  locked?: boolean;
+  composition: unknown;
+  refs?: unknown;
+  responseSummary?: unknown;
+  error?: string | null;
+};
+
+const buildPromptPayloadIndex = (baseDir: string, artifacts: Array<PromptPayloadArtifact & { path: string }>): NotebookFile => ({
+  path: `${baseDir}/state/payloads/index.md`,
+  mode: 'state',
+  writePolicy: 'overwrite',
+  description: 'Index of latest per-shot prompt payload audit artifacts.',
+  content: [
+    '# Prompt Payload Artifacts',
+    '',
+    'Latest composed prompt payloads captured from canonical Mirage state. Use these files for local/debug diagnosis after sync; live Studio/MCP remains the source of truth.',
+    '',
+    artifacts.length
+      ? artifacts.map((artifact) => [
+        `- [${artifact.shotLabel} — ${artifact.kind}](${artifact.path.replace(`${baseDir}/state/payloads/`, '')})`,
+        `  - captured: ${artifact.capturedAt || 'unknown'}; source: ${artifact.source}`,
+        artifact.provider || artifact.model ? `  - provider/model: ${[artifact.provider, artifact.model].filter(Boolean).join(' / ')}` : null,
+        artifact.outputAssetIds?.length ? `  - outputs: ${artifact.outputAssetIds.join(', ')}` : null,
+        artifact.storyboardVersionId ? `  - storyboard version: ${artifact.storyboardVersionId}` : null,
+        artifact.error ? `  - error: ${artifact.error}` : null,
+      ].filter(Boolean).join('\n')).join('\n')
+      : 'No composed video or storyboard payloads recorded yet.',
+    '',
+  ].join('\n'),
+});
+
+const buildPromptPayloadFiles = async (project: Project): Promise<NotebookFile[]> => {
+  const baseDir = normalizedProjectDir(project);
+  const shotEntries = project.scenes.flatMap((scene, sceneIndex) =>
+    scene.shots.map((shot, shotIndex) => ({
+      shot,
+      label: shotLabel(sceneIndex, shotIndex),
+      slug: shotPayloadFileSlug(sceneIndex, shotIndex, shot.id),
+    })),
+  );
+  const shotIds = shotEntries.map(({ shot }) => shot.id);
+  const shotMeta = new Map(shotEntries.map((entry) => [entry.shot.id, entry]));
+  const artifacts: Array<PromptPayloadArtifact & { path: string }> = [];
+
+  try {
+    const attempts = await selectAll('generation_attempts', {
+      project_id: project.id,
+      stage: 'generate-shot-video',
+    }, { orderBy: 'created_at', ascending: false, limit: 200 });
+    const seenVideoShots = new Set<string>();
+    for (const row of attempts) {
+      const shotId = String(row.shot_id || '');
+      if (!shotId || !shotIds.includes(shotId) || seenVideoShots.has(shotId)) continue;
+      const requestSummary = safeParseObject(row.request_summary);
+      const composition = requestSummary.promptComposition || null;
+      if (!composition) continue;
+      seenVideoShots.add(shotId);
+      const meta = shotMeta.get(shotId);
+      if (!meta) continue;
+      artifacts.push({
+        kind: 'video',
+        projectId: project.id,
+        shotId,
+        shotLabel: meta.label,
+        path: `${baseDir}/state/payloads/video/${meta.slug}.json`,
+        source: 'generation_attempts.request_summary.promptComposition',
+        capturedAt: row.created_at || row.updated_at || null,
+        provider: row.provider || null,
+        model: row.model || null,
+        status: row.status || null,
+        chargeStatus: row.charge_status || null,
+        providerRequestId: row.provider_request_id || null,
+        outputAssetIds: safeParseArray(row.output_asset_ids).map(String),
+        composition,
+        responseSummary: safeParseObject(row.response_summary),
+        error: row.error || null,
+      });
+    }
+  } catch {
+    // Older environments may not have the attempts table yet; keep sync working.
+  }
+
+  try {
+    const versions = await selectAll('storyboard_versions', {
+      project_id: project.id,
+    }, { orderBy: 'created_at', ascending: false, limit: 500 });
+    const seenStoryboardShots = new Set<string>();
+    for (const row of versions) {
+      const shotId = String(row.shot_id || '');
+      if (!shotId || !shotIds.includes(shotId) || seenStoryboardShots.has(shotId)) continue;
+      const metadata = safeParseObject(row.metadata);
+      const composition = metadata.promptComposition || null;
+      if (!composition) continue;
+      seenStoryboardShots.add(shotId);
+      const meta = shotMeta.get(shotId);
+      if (!meta) continue;
+      artifacts.push({
+        kind: 'storyboard_render',
+        projectId: project.id,
+        shotId,
+        shotLabel: meta.label,
+        path: `${baseDir}/state/payloads/storyboard/${meta.slug}.json`,
+        source: 'storyboard_versions.metadata.promptComposition',
+        capturedAt: row.created_at || null,
+        provider: metadata.provider || null,
+        model: metadata.rendererModel || row.image_model || null,
+        storyboardVersionId: row.id || null,
+        storyboardAssetId: row.asset_id || null,
+        locked: !!row.locked,
+        composition,
+        refs: safeParseArray(row.refs),
+        error: null,
+      });
+    }
+  } catch {
+    // Older environments may not have storyboard history on the active prefix.
+  }
+
+  return [
+    buildPromptPayloadIndex(baseDir, artifacts),
+    ...artifacts.map((artifact) => ({
+      path: artifact.path,
+      mode: 'state' as const,
+      writePolicy: 'overwrite' as const,
+      description: `Latest ${artifact.kind} prompt payload artifact for ${artifact.shotLabel}.`,
+      content: `${JSON.stringify(artifact, null, 2)}\n`,
+    })),
+  ];
 };
 
 export const buildNotebookSkillArtifacts = (project: Pick<Project, 'id'>): {
@@ -822,6 +1000,7 @@ export const buildProjectNotebook = async (project: Project) => {
   const skillResources = loadSkillResources();
   const skillsManifest = buildSkillsManifest(skillResources);
   const generationTraceFiles = await buildGenerationTraceFiles(project);
+  const promptPayloadFiles = await buildPromptPayloadFiles(project);
   const generatedAt = new Date().toISOString();
   const actionsHash = buildActionsHash();
   const files: NotebookFile[] = [
@@ -883,6 +1062,7 @@ export const buildProjectNotebook = async (project: Project) => {
       content: buildShotPrompts(project),
     },
     ...generationTraceFiles,
+    ...promptPayloadFiles,
     {
       path: `${baseDir}/audio-plan.md`,
       mode: 'draft',
@@ -957,6 +1137,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific sync command so file bodies do not travel through chat; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell capability. If using this full payload manually, write each file to its path relative to the current workspace. Project files live under mirage/projects/<projectId>/ (state/, script.md, audio-plan.md, storyboards/, config/style-notes.json, config/preferences.json, config/prompts/, hashes.json, notebook.json, journal.md). Create journal.md only if missing. Before overwriting editable artifacts or a project config/ file, check whether it has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and project config files are editable overrides. Apply post-visual wording edits with run_action(apply_text_edits); use run_action(add_shot/delete_shot) for one-shot insert/delete inside an existing scene; use run_action(apply_script) only for pre-visual scripts or broad topology rebuilds. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. Workspace operating files are not part of project notebook sync: Mirage skills come from the plugin, action schemas come from live MCP list_actions/describe_action, and AGENTS.md/CLAUDE.md are initialized separately with mirage init. Append concise decisions to the project journal.md.',
+    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific sync command so file bodies do not travel through chat; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell capability. If using this full payload manually, write each file to its path relative to the current workspace. Project files live under mirage/projects/<projectId>/ (state/, script.md, audio-plan.md, storyboards/, config/style-notes.json, config/preferences.json, config/prompts/, hashes.json, notebook.json, journal.md). Payload audit files live under state/payloads/ and are read-only debug artifacts for exact generated storyboard/video prompt composition. Create journal.md only if missing. Before overwriting editable artifacts or a project config/ file, check whether it has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and project config files are editable overrides. Apply post-visual wording edits with run_action(apply_text_edits); use run_action(add_shot/delete_shot) for one-shot insert/delete inside an existing scene; use run_action(apply_script) only for pre-visual scripts or broad topology rebuilds. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. Workspace operating files are not part of project notebook sync: Mirage skills come from the plugin, action schemas come from live MCP list_actions/describe_action, and AGENTS.md/CLAUDE.md are initialized separately with mirage init. Append concise decisions to the project journal.md.',
   };
 };
