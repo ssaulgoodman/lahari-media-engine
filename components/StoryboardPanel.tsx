@@ -201,6 +201,19 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     const newList = list.includes(key) ? list.filter(k => k !== key) : [...list, key];
     onUpdateShot(scene.id, shot.id, { excludedRefs: { ...current, [tab]: newList } });
   };
+  const storyboardPayloadImageControls = Object.fromEntries(((activeStoryboardVersion?.promptComposition as any)?.images || [])
+    .map((image: any) => typeof image?.excludableKey === 'string' && image.excludableKey
+      ? [
+        image.excludableKey,
+        {
+          excluded: excludedStoryboard.includes(image.excludableKey),
+          disabled: isGenerating || saving,
+          title: 'Save whether this reference is included by default in future storyboard renders for this shot.',
+          onToggle: () => toggleRefExclusion('storyboard', image.excludableKey),
+        },
+      ]
+      : null)
+    .filter(Boolean) as Array<[string, { excluded: boolean; disabled: boolean; title: string; onToggle: () => void }]>);
 
   // Lazy-fetch the active version's cutPlanText whenever the active version
   // changes (after generate/refine the project state updates with a new
@@ -637,6 +650,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
               ? 'What was actually sent for this storyboard render.'
               : 'This storyboard version predates prompt composition capture, or was imported manually.',
           } : null}
+          imageControls={storyboardPayloadImageControls}
           onWriteStoryboardPrompt={onWriteStoryboardPrompt}
           onGenerateStoryboard={onGenerateStoryboard}
           onUploadStoryboardClick={onUploadStoryboardImage ? () => uploadStoryboardInputRef.current?.click() : undefined}
@@ -719,6 +733,12 @@ interface StoryboardTabBodyProps {
   refineImage: { file: File; previewUrl: string } | null;
   onRefineImageChange: (image: { file: File; previewUrl: string } | null) => void;
   promptDescription?: PromptDescription | null;
+  imageControls?: Record<string, {
+    excluded?: boolean;
+    disabled?: boolean;
+    title?: string;
+    onToggle: () => void;
+  }>;
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
   onUploadStoryboardClick?: () => void;
@@ -737,7 +757,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   onPromptChange, onPlanBlur,
   isPromptCollapsed, onTogglePromptCollapse, recentlyRefined,
   refineImage, onRefineImageChange,
-  promptDescription,
+  promptDescription, imageControls,
   onWriteStoryboardPrompt, onGenerateStoryboard, onUploadStoryboardClick, uploadingStoryboard, onCancelStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
   const saving = saveState === 'saving';
@@ -835,6 +855,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
           note={promptDescription?.note}
           generatedAt={promptDescription?.generatedAt}
           source={promptDescription?.source}
+          imageControls={imageControls}
         />
       )}
 

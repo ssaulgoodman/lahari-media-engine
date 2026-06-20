@@ -211,6 +211,17 @@ export const ShotCard: React.FC<ShotCardProps> = ({
     }
   }, [project.id, setProjectShotLocally, shot.id, shot.videoPromptSlots]);
 
+  const saveExcludedRefsFromContext = useCallback(async (excludedRefs: { storyboard: string[]; video: string[] }) => {
+    const previous = shot.excludedRefs;
+    setProjectShotLocally({ excludedRefs });
+    try {
+      await updateShot(project.id, shot.id, { excludedRefs });
+    } catch (err) {
+      setProjectShotLocally({ excludedRefs: previous });
+      throw err;
+    }
+  }, [project.id, setProjectShotLocally, shot.excludedRefs, shot.id]);
+
   const saveWorkflowModeFromContext = useCallback(async (workflowMode: ShotWorkflowMode) => {
     const previous = shot.workflowMode || 'auto';
     setProjectShotLocally({ workflowMode });
@@ -738,6 +749,8 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           loading={shotContextLoading}
           error={shotContextError}
           onRefresh={() => loadShotContext()}
+          excludedRefs={shot.excludedRefs || { storyboard: [], video: [] }}
+          onSaveExcludedRefs={saveExcludedRefsFromContext}
           onSaveVideoPromptSlots={saveVideoPromptSlotsFromContext}
           onSaveWorkflowMode={saveWorkflowModeFromContext}
         />

@@ -11,7 +11,7 @@ Mirage renders the prompt with locked style, character, and environment referenc
 
 ## First Move
 
-Start with `get_shot_context(projectId, shotId)` when available. It shows the shot direction, assigned cast/environment, locked refs, current board state, latest storyboard render payload summary, video payload summary, and exact edit paths without loading full prompt bodies. If no draft exists, write from the shot. If fixing a generated board, read the current board state and the relevant payload summary before guessing; use `describe_prompt({ kind: "storyboard_render" })` only when you need exact full text.
+Start with `get_shot_context(projectId, shotId)` when available. It shows the shot direction, assigned cast/environment, locked refs, current board state, latest storyboard render payload summary, video payload summary, and exact edit paths without loading full prompt bodies. If no draft exists, write from the shot. If fixing a generated board, read the current board state and the relevant payload summary before guessing; use `run_action(generate_storyboard, { dryRun: true })` to preview the exact next storyboard render payload before spending, and use `describe_prompt({ kind: "storyboard_render" })` only when you need exact text from an already-generated board.
 
 ## Prompt Pattern
 
@@ -61,10 +61,10 @@ Before locking, check whether the board actually stages the shot:
 ## Repair Ladder
 
 1. **Written beat is wrong** → edit `storyboards/<scene>.md`, then `run_action(apply_storyboard_prompts)`. Free.
-2. **No board exists yet** → `start_job(generate_storyboard)` after approval; lock after review.
+2. **No board exists yet** → `run_action(generate_storyboard, { dryRun: true })` to inspect the exact prompt/refs, then `start_job(generate_storyboard)` after approval; lock after review.
 3. **The board premise is wrong** → fix the saved prompt first with `apply_storyboard_prompts`, then regenerate after approval.
 4. **Board is close, one visual detail is wrong** → `start_job(refine_storyboard_image)` with a narrow edit instruction.
-5. **Wrong refs/context are attached** → regenerate with `contextOverrides` to exclude/swap refs, style image, or previous-board context.
+5. **Wrong refs/context are attached** → dry-run with `contextOverrides` to exclude/swap refs, style image, or previous-board context; generate only after the payload shows the intended refs.
 6. **Native or artist image is better** → upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
 7. **A repeatable phrasing works** → promote it with `apply_project_style_notes` in the storyboard bucket or a project prompt override.
 

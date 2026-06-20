@@ -510,15 +510,7 @@ const renderWithProvider = async (
   };
 };
 
-const generateStoryboardVersionUnlocked = async (opts: GenerateStoryboardVersionOptions): Promise<{
-  versionId: string;
-  assetId: string;
-  imageUrl: string;
-  storagePath: string;
-  responseId: string | null;
-  reasoningModel: string | null;
-  imageModel: string;
-}> => {
+const prepareStoryboardRender = async (opts: GenerateStoryboardVersionOptions) => {
   const ctx = await loadStoryboardContext(opts.projectId, opts.shotId);
   const promptBase = String(ctx.shot.storyboard_prompt || '').trim();
   const cutPlanText = String(ctx.shot.storyboard_cut_plan || '').trim();
@@ -608,8 +600,6 @@ Edit instruction:
 ${opts.artistNote.trim()}
 ${artistRefNote}`
     : promptBase;
-  await updateRows('shots', { id: opts.shotId }, { storyboard_status: 'loading' });
-  const t0 = Date.now();
   const preferences = await getProjectPreferencesState(ctx.project as any);
   const storyboardProviderKey = opts.modelOverride?.storyboardProvider || preferences.preferences.storyboardProvider;
   const providerSpec = getStoryboardProvider(storyboardProviderKey);
@@ -634,6 +624,82 @@ ${artistRefNote}`
       contextOverrides: contextTrace,
     },
   });
+
+  return {
+    ctx,
+    promptBase,
+    cutPlanText,
+    previousVersion,
+    refs,
+    refMeta,
+    contextTrace,
+    storyboardRenderMode,
+    prompt,
+    storyboardProviderKey,
+    providerSpec,
+    renderPrompt,
+    refBindingContract,
+    renderContract,
+    composition,
+  };
+};
+
+export const previewStoryboardRenderPrompt = async (opts: GenerateStoryboardVersionOptions) => {
+  const prepared = await prepareStoryboardRender(opts);
+  return {
+    kind: 'mirage.storyboard_render.preview',
+    generatedAt: new Date().toISOString(),
+    projectId: opts.projectId,
+    shotId: opts.shotId,
+    prompt: prepared.renderPrompt,
+    composition: prepared.composition,
+    compositionDetail: 'full',
+    storyboardRenderMode: prepared.storyboardRenderMode,
+    provider: {
+      key: prepared.providerSpec.key,
+      label: prepared.providerSpec.label,
+      provider: prepared.providerSpec.provider,
+      runtimeModel: prepared.providerSpec.runtimeModel,
+    },
+    refs: prepared.refMeta.map((ref) => ({
+      label: ref.label,
+      assetId: ref.assetId || null,
+      excludableKey: ref.excludableKey || null,
+      url: storageUrl(ref.filePath),
+    })),
+    note: 'Dry run only: exact storyboard render prompt and refs that would be sent. No shot state changed and no provider call was made.',
+  };
+};
+
+const generateStoryboardVersionUnlocked = async (opts: GenerateStoryboardVersionOptions): Promise<{
+  versionId: string;
+  assetId: string;
+  imageUrl: string;
+  storagePath: string;
+  responseId: string | null;
+  reasoningModel: string | null;
+  imageModel: string;
+}> => {
+  const prepared = await prepareStoryboardRender(opts);
+  const {
+    ctx,
+    promptBase,
+    cutPlanText,
+    previousVersion,
+    refs,
+    refMeta,
+    contextTrace,
+    storyboardRenderMode,
+    prompt,
+    storyboardProviderKey,
+    providerSpec,
+    renderPrompt,
+    refBindingContract,
+    renderContract,
+    composition,
+  } = prepared;
+  await updateRows('shots', { id: opts.shotId }, { storyboard_status: 'loading' });
+  const t0 = Date.now();
 
   try {
     const rendered = await renderWithProvider(storyboardProviderKey, renderPrompt, ctx.project.aspect_ratio || '16:9', refs);
@@ -732,7 +798,7 @@ ${artistRefNote}`
     await logCall({
       projectId: opts.projectId,
       stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
-      model: getStoryboardProvider(preferences.preferences.storyboardProvider).runtimeModel,
+      model: providerSpec.runtimeModel,
       prompt: renderPrompt,
       referenceInputs: [
         ...refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),

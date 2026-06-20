@@ -108,7 +108,7 @@ export const STORYBOARD_ACTION_SPECS = {
     surface: 'storyboard',
     mutates: true,
     paid: true,
-    description: 'Render a storyboard board for one shot from its saved storyboard prompt. dryRun returns the plan without spending.',
+    description: 'Render a storyboard board for one shot from its saved storyboard prompt. dryRun returns requirements, cost, exact prompt composition, refs, and params without spending.',
     input: {
       projectId: 'string',
       shotId: 'string',
@@ -598,7 +598,7 @@ export const SYSTEM_ACTION_SPECS = {
     surface: 'system',
     mutates: false,
     paid: false,
-    description: 'Read the exact composed prompt payload for a generated artifact. Supports video and storyboard render payloads through one generic inspector; use generate_video dryRun for "what would be sent now" before spending.',
+    description: 'Read the exact composed prompt payload for a generated artifact. Supports video and storyboard render payloads through one generic inspector; use generate_video or generate_storyboard dryRun for "what would be sent now" before spending.',
     input: {
       projectId: 'string',
       kind: '"video" | "storyboard_render"',

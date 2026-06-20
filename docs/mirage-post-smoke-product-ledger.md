@@ -525,3 +525,9 @@ repeatable human/agent product surface.
   - L4 (backend, optional refinement) Slot source precedence detail: distinguish recipe-default
     vs engine-default in the slot `source` (today it is binary saved-override vs composer default).
     Only if L1-L3 surface a real ambiguity.
+- 2026-06-20 · storyboard payload preview/control slice landed locally · — ·
+  `generate_storyboard` dry-run now returns the exact storyboard render prompt composition,
+  refs, provider params, and prompt text before spend, using the same composer as paid render.
+  Studio's shared payload inspector can now toggle excludable storyboard refs from the Images
+  chips, writing the existing `excludedRefs.storyboard` shot field through the normal owned shot
+  update path.

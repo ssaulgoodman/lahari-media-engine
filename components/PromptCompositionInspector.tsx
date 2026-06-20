@@ -7,6 +7,12 @@ type PromptCompositionInspectorProps = {
   note?: string;
   generatedAt?: string | null;
   source?: string;
+  imageControls?: Record<string, {
+    excluded?: boolean;
+    disabled?: boolean;
+    title?: string;
+    onToggle: () => void;
+  }>;
   segmentControls?: Record<string, {
     value?: boolean;
     disabled?: boolean;
@@ -38,6 +44,7 @@ export const PromptCompositionInspector: React.FC<PromptCompositionInspectorProp
   note,
   generatedAt,
   source,
+  imageControls,
   segmentControls,
 }) => {
   const segments = Array.isArray(composition?.segments) ? composition?.segments || [] : [];
@@ -80,20 +87,48 @@ export const PromptCompositionInspector: React.FC<PromptCompositionInspectorProp
               <div className="space-y-1">
                 <div className="text-[10px] uppercase tracking-wide text-zinc-500">Images</div>
                 <div className="flex flex-wrap gap-1.5">
-                  {images.map((image, index) => (
-                    <span
+                  {images.map((image, index) => {
+                    const excludableKey = typeof image.excludableKey === 'string' ? image.excludableKey : '';
+                    const control = excludableKey ? imageControls?.[excludableKey] : undefined;
+                    const isExcluded = image.included === false || control?.excluded;
+                    const content = (
+                      <>
+                        <span className="font-mono text-zinc-500">{(image as any).ref || `#${index + 1}`}</span>
+                        <span className="truncate">{imageLabel(image, index)}</span>
+                        {control && (
+                          <span className="ml-0.5 rounded border border-white/[0.06] px-1 text-[9px] uppercase tracking-wide text-zinc-500">
+                            {isExcluded ? '+' : '×'}
+                          </span>
+                        )}
+                      </>
+                    );
+                    const className = `inline-flex max-w-full items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] ${
+                      isExcluded
+                        ? 'border-white/[0.05] bg-white/[0.01] text-zinc-500 line-through'
+                        : 'border-white/[0.08] bg-white/[0.03] text-zinc-300'
+                    }`;
+                    const titleText = [image.source, image.assetId, control?.title].filter(Boolean).join(' · ');
+                    return control ? (
+                      <button
                       key={`${image.assetId || image.url || index}-${index}`}
-                      className={`inline-flex max-w-full items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] ${
-                        image.included === false
-                          ? 'border-white/[0.05] bg-white/[0.01] text-zinc-500 line-through'
-                          : 'border-white/[0.08] bg-white/[0.03] text-zinc-300'
-                      }`}
-                      title={[image.source, image.assetId].filter(Boolean).join(' · ')}
-                    >
-                      <span className="font-mono text-zinc-500">{(image as any).ref || `#${index + 1}`}</span>
-                      <span className="truncate">{imageLabel(image, index)}</span>
-                    </span>
-                  ))}
+                        type="button"
+                        disabled={control.disabled}
+                        onClick={control.onToggle}
+                        className={`${className} transition-colors hover:border-white/15 hover:text-white disabled:cursor-wait disabled:opacity-50`}
+                        title={titleText}
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <span
+                        key={`${image.assetId || image.url || index}-${index}`}
+                        className={className}
+                        title={titleText}
+                      >
+                        {content}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             )}

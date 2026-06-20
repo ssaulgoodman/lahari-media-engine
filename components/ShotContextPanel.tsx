@@ -3,11 +3,15 @@ import { describePrompt } from '../services/api';
 import type { PromptDescription, PromptDescriptionKind, ShotContext, ShotContextPayloadSummary, ShotWorkflowMode, VideoPromptSlotDefaults } from '../services/api';
 import { PromptCompositionInspector } from './PromptCompositionInspector';
 
+type ShotRefExclusions = { storyboard: string[]; video: string[] };
+
 type ShotContextPanelProps = {
   context: ShotContext | null;
   loading?: boolean;
   error?: string | null;
   onRefresh?: () => void;
+  excludedRefs?: ShotRefExclusions;
+  onSaveExcludedRefs?: (refs: ShotRefExclusions) => Promise<void> | void;
   onSaveVideoPromptSlots?: (slots: VideoPromptSlotDefaults) => Promise<void> | void;
   onSaveWorkflowMode?: (mode: ShotWorkflowMode) => Promise<void> | void;
 };
@@ -158,7 +162,16 @@ const PayloadStatus: React.FC<{
   );
 };
 
-export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loading, error, onRefresh, onSaveVideoPromptSlots, onSaveWorkflowMode }) => {
+export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({
+  context,
+  loading,
+  error,
+  onRefresh,
+  excludedRefs,
+  onSaveExcludedRefs,
+  onSaveVideoPromptSlots,
+  onSaveWorkflowMode,
+}) => {
   const contextVideoPromptSlots = videoSlotsFromContext(context);
   const [optimisticVideoPromptSlots, setOptimisticVideoPromptSlots] = useState<VideoPromptSlotDefaults | null>(null);
   const effectiveVideoPromptSlots = optimisticVideoPromptSlots || contextVideoPromptSlots;
@@ -178,6 +191,8 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [slotSavingKey, setSlotSavingKey] = useState<string | null>(null);
   const [slotSaveError, setSlotSaveError] = useState<string | null>(null);
+  const [refSavingKey, setRefSavingKey] = useState<string | null>(null);
+  const [refSaveError, setRefSaveError] = useState<string | null>(null);
   const [workflowSaving, setWorkflowSaving] = useState(false);
   const [workflowSaveError, setWorkflowSaveError] = useState<string | null>(null);
   const inspectRequestId = useRef(0);
@@ -191,6 +206,8 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
     setOptimisticWorkflowMode(null);
     setSlotSavingKey(null);
     setSlotSaveError(null);
+    setRefSavingKey(null);
+    setRefSaveError(null);
     setWorkflowSaving(false);
     setWorkflowSaveError(null);
   }, [context?.project.id, context?.shot.id]);
@@ -263,6 +280,25 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
     }
   };
 
+  const toggleStoryboardRefDefault = async (key: string) => {
+    if (!onSaveExcludedRefs) return;
+    const current = excludedRefs || { storyboard: [], video: [] };
+    const storyboard = current.storyboard || [];
+    const nextStoryboard = storyboard.includes(key)
+      ? storyboard.filter(item => item !== key)
+      : [...storyboard, key];
+    setRefSavingKey(key);
+    setRefSaveError(null);
+    try {
+      await onSaveExcludedRefs({ storyboard: nextStoryboard, video: current.video || [] });
+      onRefresh?.();
+    } catch (err: any) {
+      setRefSaveError(err?.message || 'Unable to save storyboard ref defaults.');
+    } finally {
+      setRefSavingKey(currentKey => currentKey === key ? null : currentKey);
+    }
+  };
+
   const videoPromptSegmentControls = activeDescription?.kind === 'video'
     ? Object.fromEntries(Object.entries(VIDEO_SEGMENT_SLOT_FIELDS).map(([slot, field]) => [
       slot,
@@ -273,6 +309,22 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
         onChange: (next: boolean | undefined) => saveVideoPromptSlotDefault(field, next),
       },
     ]))
+    : undefined;
+
+  const storyboardImageControls = activeDescription?.kind === 'storyboard_render'
+    ? Object.fromEntries(((activeDescription.composition?.images || []) as any[])
+      .map((image) => typeof image?.excludableKey === 'string' && image.excludableKey
+        ? [
+          image.excludableKey,
+          {
+            excluded: !!excludedRefs?.storyboard?.includes(image.excludableKey),
+            disabled: !!refSavingKey || !onSaveExcludedRefs,
+            title: 'Save whether this reference is included by default in future storyboard renders for this shot.',
+            onToggle: () => toggleStoryboardRefDefault(image.excludableKey),
+          },
+        ]
+        : null)
+      .filter(Boolean) as Array<[string, { excluded: boolean; disabled: boolean; title: string; onToggle: () => void }]>)
     : undefined;
 
   const blockers: Array<{ surface: string; prerequisites: string[] }> = [];
@@ -493,6 +545,11 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
                   {descriptionError}
                 </div>
               )}
+              {refSaveError && (
+                <div className="rounded-lg border border-red-400/15 bg-red-500/[0.06] px-3 py-2 text-[11px] leading-relaxed text-red-200">
+                  {refSaveError}
+                </div>
+              )}
               {activeDescription ? (
                 <PromptCompositionInspector
                   title={`${activeDescription.kind === 'storyboard_render' ? 'Storyboard' : 'Video'} payload inspector`}
@@ -500,6 +557,7 @@ export const ShotContextPanel: React.FC<ShotContextPanelProps> = ({ context, loa
                   note={activeDescription.note}
                   generatedAt={activeDescription.generatedAt}
                   source={activeDescription.source}
+                  imageControls={storyboardImageControls}
                   segmentControls={videoPromptSegmentControls}
                 />
               ) : descriptionLoadingKey ? (

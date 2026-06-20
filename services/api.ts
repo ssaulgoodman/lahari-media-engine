@@ -660,6 +660,7 @@ export type PromptCompositionImage = {
   assetId?: string;
   role?: string;
   included?: boolean;
+  excludableKey?: string | null;
 };
 
 export type PromptComposition = {

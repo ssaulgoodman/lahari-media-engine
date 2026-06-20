@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { generateStoryboardVersion, lockStoryboardVersion, planStoryboardPrompt, unlockStoryboardVersion, writeStoryboardPrompt } from '../storyboard.js';
+import { generateStoryboardVersion, lockStoryboardVersion, planStoryboardPrompt, previewStoryboardRenderPrompt, unlockStoryboardVersion, writeStoryboardPrompt } from '../storyboard.js';
 import { insertRow, selectAll, selectOne, updateRows } from '../../database.js';
 import { storageUrl } from '../../storage.js';
 import type { ContextOverrides } from '../contextOverrides.js';
@@ -148,6 +148,55 @@ export const planGenerateStoryboard = (project: Project, shotId: string, modelOv
     willOverwrite,
     willChange,
     approval: `Generate a new storyboard board for ${project.title} ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)} using ${provider.label}. Estimated cost: $${costEstimate.toFixed(3)}. ${willOverwrite ? 'This will replace the active board pointer and keep the old board in history.' : 'This will create the first active board for this shot.'}`,
+  };
+};
+
+export const previewGenerateStoryboard = async (
+  project: Project,
+  shotId: string,
+  modelOverride: ModelOverride = {},
+  opts: { artistNote?: string; contextOverrides?: ContextOverrides } = {},
+) => {
+  const plan = planGenerateStoryboard(project, shotId, modelOverride);
+  let composition: unknown = null;
+  let prompt: string | null = null;
+  let compositionError: { message: string; code?: string; details?: unknown } | null = null;
+  let preview: any = null;
+  if (plan.canRun) {
+    try {
+      preview = await previewStoryboardRenderPrompt({
+        projectId: project.id,
+        shotId,
+        artistNote: opts.artistNote,
+        contextOverrides: opts.contextOverrides,
+        modelOverride: { storyboardProvider: modelOverride.storyboardProvider },
+      });
+      composition = preview.composition || null;
+      prompt = preview.prompt || null;
+    } catch (err: any) {
+      compositionError = {
+        message: err?.message || 'Could not build storyboard render prompt composition.',
+        code: err?.code,
+        details: err?.details,
+      };
+    }
+  }
+  return {
+    ...plan,
+    prompt,
+    composition,
+    compositionDetail: composition ? 'full' : null,
+    compositionError,
+    provider: preview?.provider || plan.provider,
+    refs: preview?.refs || [],
+    storyboardRenderMode: preview?.storyboardRenderMode || null,
+    compositionNote: composition
+      ? 'Dry run only: exact storyboard render prompt, source segments, params, and refs that would be sent. No shot state changed and no provider call was made.'
+      : compositionError
+        ? 'Composition preview failed; see compositionError. Fix the named missing/invalid input, then re-run dryRun before spending.'
+        : plan.canRun
+          ? 'Composition preview unavailable.'
+          : 'Prerequisites not met — see prerequisites.',
   };
 };
 

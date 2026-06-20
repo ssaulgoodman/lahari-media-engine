@@ -60,7 +60,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Cast/environment refs: use `generate_candidates`, `list_candidates`, `import_reference_candidate`, `lock_reference`, or upload an image through `/api/agent/uploads`.
 - Native storyboard image: upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
 - Native keyframe/start-frame image: upload with `purpose=keyframe_image`, then `run_action(import_keyframe_image)`.
-- Storyboard render/refine: use `start_job(generate_storyboard)` or `start_job(refine_storyboard_image)` after artist approval.
+- Storyboard render/refine: use `run_action(generate_storyboard, { dryRun: true })` to inspect exact prompt/refs/params before spend when context matters, then `start_job(generate_storyboard)` or `start_job(refine_storyboard_image)` after artist approval.
 - Repeatable formats: use `run_action(list_workflows)` to discover named recipes, then `run_action(apply_project_workflow)` to apply one such as Yapper or HF music-video sketch planning. After that, fill the stored recipe's slots instead of rewriting its wrapper.
 - Saved personas: when the artist says "make a <persona> clip about <topic>" or "run Padma/Yapper," call `list_personas`, then `create_project_from_persona` with the persona and topic. Personas own reusable identity (character ref, style ref, voice, tone); workflow recipes own the production format.
 - Prior work: use `query_artist_memory` for old project taste/format/model clues and `search_artist_assets` for reusable refs, renders, keyframes, storyboards, audio, or style images.

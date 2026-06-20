@@ -1115,7 +1115,10 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       const input = generateStoryboardInputSchema.parse(rawInput);
       const project = await fullProjectForUser(input.projectId, auth.userId);
       return input.dryRun
-        ? studio.planGenerateStoryboard(project, input.shotId, input.modelOverride || {})
+        ? studio.previewGenerateStoryboard(project, input.shotId, input.modelOverride || {}, {
+          artistNote: input.artistNote,
+          contextOverrides: input.contextOverrides,
+        })
         : studio.applyGenerateStoryboard(project, input.shotId, input.artistNote, input.modelOverride || {}, input.contextOverrides);
     }
     if (actionKey === 'bulk_generate_storyboards') {
