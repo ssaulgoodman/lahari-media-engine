@@ -616,3 +616,39 @@ save/restore/reset with version history.
 - **Text / title overlays** (no text track today).
 - **In/out range + loop playback** for reviewing a section.
 - **Keyboard-shortcut cheat sheet** for discoverability (the shortcuts that exist are invisible).
+
+### Upstream-port strategy (2026-06-20, supersedes "build from scratch")
+
+The timeline editor was lifted from the open-source **designcombo/react-video-editor**
+(github.com/designcombo/react-video-editor) — same `@designcombo/*` engine packages, a CapCut/
+Canva-style editor on Remotion. We ported the engine + a deliberately **stripped** set of item
+classes: our `components/timeline-editor/items.ts` registers `{ Text, Image, Audio, Video }`, each
+`extends Trimmable` with a `_render` that draws only a label on a colored block. Upstream ships the
+rich versions of these same classes plus more. So most of the Tier-1/2/3 gaps are a **port +
+adapt**, not a greenfield build.
+
+What upstream has under `src/features/editor/` that we did not take:
+- **Audio waveforms** — `timeline/items/{wave,lineal,radial,hill}-audio-bars.ts` + `player/items/
+  audio-bars/`. Four waveform styles as item renderers. (Our `Audio` item draws a bare label.)
+- **Thumbnails / richer clips** — full `timeline/items/{video,image}.ts` (vs our label-only).
+- **More item types** — `timeline/items/{caption,text,shape}.ts`.
+- **Properties / controls panel** — `control-item/`, `control-list.tsx`, `menu-list*.tsx` (likely
+  clip speed, transform, volume, fades — i.e., our Tier-3 speed/transform UI).
+- **Scene interactions** — `scene/interactions.tsx`, `scene/droppable.tsx`, `hooks/
+  use-pointer-drag.tsx`, `hooks/use-timeline-offset.ts`.
+
+Caveats for the port:
+- Version drift: our `@designcombo/timeline` is 5.5.8 and our `Trimmable` base is finicky (we
+  already patch it via `assignTrimmableProps` because the base does not assign props). Upstream
+  item classes need adapting to our version + our data shape (`metadata.displayName`, our store),
+  not copy-paste.
+- Waveforms/thumbnails still need a **data source**: peak extraction for audio and poster/sprite
+  frames for video. Confirm whether upstream precomputes these or derives them client-side, and
+  whether Mirage should precompute peaks server-side at upload (cheaper, cacheable) when we port.
+- **Snapping is likely already on.** The compiled SDK contains `Snap`/`Snapping`/`magnetic`/
+  `snapThreshold`/`guideLine`; our integration does not disable it. Confirm in the running app —
+  if it snaps, that backlog item is a visible toggle + momentary-disable key, not a build.
+
+Recommended next step: clone the upstream repo to a scratch dir, do a file-by-file port audit, and
+port the high-value items (waveforms, then thumbnails) adapted to our 5.5.8 item classes — rather
+than re-implement canvas rendering we can lift.
