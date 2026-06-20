@@ -107,6 +107,11 @@ const Playhead: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => {
           pointerEvents: 'auto',
         }}
       />
+      {/* Stem is visual-only (pointerEvents inherited none from the container)
+          so it never intercepts clicks on clips beneath it. The playhead is
+          dragged by its head; the ruler click-to-seek and frame keys also move
+          it. A short grab pad around the head keeps it easy to grab without
+          covering the track area. */}
       <div
         style={{
           position: 'absolute',
@@ -123,10 +128,10 @@ const Playhead: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => {
         onMouseDown={onDown}
         style={{
           position: 'absolute',
-          top: 42,
+          top: 24,
           left: '50%',
-          width: 8,
-          height: 'calc(100% - 42px)',
+          width: 22,
+          height: 24,
           transform: 'translateX(-50%)',
           background: 'transparent',
           cursor: 'ew-resize',
