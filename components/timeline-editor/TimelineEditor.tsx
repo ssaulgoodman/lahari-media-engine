@@ -1032,6 +1032,31 @@ const TimelineEditor: React.FC<Props> = ({
         return;
       }
 
+      // Frame-accurate transport. Left/Right step one frame, Shift+arrow jumps
+      // one second, Home/End snap to the timeline ends. Stepping pauses playback
+      // first so the playhead stays where you put it. Key repeat is allowed so
+      // holding an arrow scrubs frame-by-frame.
+      if (!mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End')) {
+        const p = useStore.getState().playerRef?.current;
+        if (!p) return;
+        const { duration, fps } = useStore.getState();
+        const lastFrame = Math.max(0, Math.round((duration / 1000) * fps) - 1);
+        const current = p.getCurrentFrame?.() ?? 0;
+        let next = current;
+        if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = lastFrame;
+        else {
+          const step = e.shiftKey ? Math.max(1, Math.round(fps)) : 1;
+          next = current + (e.key === 'ArrowRight' ? step : -step);
+        }
+        next = Math.min(lastFrame, Math.max(0, next));
+        e.preventDefault();
+        if (next === current) return;
+        if (p.isPlaying?.()) p.pause();
+        p.seekTo(next);
+        return;
+      }
+
       if (!mod && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
         const { splitActiveAtPlayhead } = useStore.getState();
         const did = splitActiveAtPlayhead();
