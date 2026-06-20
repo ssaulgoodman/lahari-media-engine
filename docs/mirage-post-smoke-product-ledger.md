@@ -419,6 +419,12 @@ Focus areas:
 - render eligibility indicator (`FFmpeg` vs `Remotion`, with reason)
 - direct access to render history and salvaged late outputs
 
+**First render slice landed locally:** Render now shows a pre-render eligibility pill before
+spend/time: `FFmpeg fast path likely` for simple timelines, or `Remotion fallback likely` with
+the first reason such as transitions, visual effects, playback-rate changes, missing media
+source, or overlapping visual clips. This is UI preflight only; the renderer remains
+authoritative after staging.
+
 Agent actions should follow these UI/data primitives, not precede them.
 
 ### P6b — Premiere Pro Bridge `[future, but important]`
@@ -516,6 +522,9 @@ repeatable human/agent product surface.
   8de2dc1, 4323d3f · Studio now has per-shot workflow mode controls, shot-row realtime refresh
   for agent/MCP generations, summary-first video dry-runs, and guarded Space play/pause plus
   clearer render readiness/status in the render timeline.
+- 2026-06-20 · render preflight eligibility landed locally · — · Render now previews likely
+  FFmpeg fast path versus Remotion fallback with the first visible reason before the artist
+  starts a render. The renderer remains authoritative once the job stages assets.
 - 2026-06-20 · legibility lane scoped down after grounding · — · Audited current state before
   starting buckets 2 (storyboard composer maturity) + 3 (self-explaining shot state). Finding:
   the BACKENDS for both largely already exist from the landed slices, so neither is a build from

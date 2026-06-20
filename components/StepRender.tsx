@@ -4,6 +4,7 @@ import TimelineEditor, { InitialClip } from './timeline-editor/TimelineEditor';
 import useStore from './timeline-editor/store';
 import { loadSnapshot } from './timeline-editor/persistence';
 import { MediaLibraryDrawer } from './MediaLibraryDrawer';
+import { DEFAULT_EFFECTS } from './timeline-editor/effects';
 import {
   startRender,
   cancelRender,
@@ -108,6 +109,75 @@ const renderErrorHint = (code?: string | null) => {
   }
 };
 
+type RenderPreflight =
+  | { kind: 'blocked'; label: string; detail: string }
+  | { kind: 'ffmpeg'; label: string; detail: string }
+  | { kind: 'remotion'; label: string; detail: string };
+
+const itemSrc = (item: any) => {
+  const src = item?.details?.src;
+  return typeof src === 'string' && src.trim() ? src.trim() : null;
+};
+
+const hasNonDefaultEffects = (details: any) =>
+  Object.entries(DEFAULT_EFFECTS).some(([key, defaultValue]) =>
+    details?.[key] !== undefined && Number(details[key]) !== defaultValue,
+  );
+
+const computeRenderPreflight = ({
+  trackItemIds,
+  trackItemsMap,
+  transitionsMap,
+  fps,
+}: {
+  trackItemIds: string[];
+  trackItemsMap: Record<string, any>;
+  transitionsMap: Record<string, any>;
+  fps: number;
+}): RenderPreflight => {
+  const items = trackItemIds.map((id) => trackItemsMap[id]).filter(Boolean);
+  const visualItems = items
+    .filter((item: any) => item?.type === 'video' || item?.type === 'image')
+    .sort((a: any, b: any) => Number(a?.display?.from || 0) - Number(b?.display?.from || 0));
+
+  if (visualItems.length === 0) {
+    return { kind: 'blocked', label: 'Add a visual clip', detail: 'The render needs at least one video or image clip.' };
+  }
+
+  const transition = Object.values(transitionsMap || {}).find((entry: any) => entry?.kind && entry.kind !== 'none');
+  if (transition) {
+    return { kind: 'remotion', label: 'Remotion fallback likely', detail: 'Timeline has transitions.' };
+  }
+
+  for (const item of items) {
+    if (!['video', 'image', 'audio'].includes(String(item?.type))) {
+      return { kind: 'remotion', label: 'Remotion fallback likely', detail: `Timeline has unsupported item type ${item?.type || 'unknown'}.` };
+    }
+    if ((item?.playbackRate ?? 1) !== 1) {
+      return { kind: 'remotion', label: 'Remotion fallback likely', detail: 'Timeline has playback-rate changes.' };
+    }
+    if (!itemSrc(item)) {
+      return { kind: 'remotion', label: 'Remotion fallback likely', detail: `${item?.type || 'Media'} item is missing its source URL.` };
+    }
+    if ((item.type === 'video' || item.type === 'image') && hasNonDefaultEffects(item.details || {})) {
+      return { kind: 'remotion', label: 'Remotion fallback likely', detail: 'Timeline has visual effects.' };
+    }
+  }
+
+  const tolerance = (1000 / Math.max(1, Number(fps) || 30)) / 2;
+  let previousEnd = 0;
+  for (const item of visualItems) {
+    const from = Number(item?.display?.from || 0);
+    const to = Number(item?.display?.to || from);
+    if (from < previousEnd - tolerance) {
+      return { kind: 'remotion', label: 'Remotion fallback likely', detail: 'Timeline has overlapping visual clips.' };
+    }
+    previousEnd = Math.max(previousEnd, to);
+  }
+
+  return { kind: 'ffmpeg', label: 'FFmpeg fast path likely', detail: 'Simple visual timeline: no transitions, effects, playback-rate changes, or overlapping visual clips.' };
+};
+
 export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [phase, setPhase] = useState<RenderPhase>({ kind: 'idle' });
   const [renderMeta, setRenderMeta] = useState<RenderStatusResponse | null>(null);
@@ -119,6 +189,8 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [cancelingRender, setCancelingRender] = useState(false);
   const timelineItems = useStore((s) => s.trackItemsMap);
   const timelineItemIds = useStore((s) => s.trackItemIds);
+  const transitionsMap = useStore((s) => s.transitionsMap);
+  const fps = useStore((s) => s.fps);
   const lastSavedAt = useStore((s) => s.lastSavedAt);
 
   // Seed lastSavedAt from disk on mount so the Header's "Saved" pill appears
@@ -215,6 +287,10 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const hasRenderableVisualClip = useMemo(
     () => Object.values(timelineItems).some((item: any) => item?.type === 'video' || item?.type === 'image'),
     [timelineItems],
+  );
+  const renderPreflight = useMemo(
+    () => computeRenderPreflight({ trackItemIds: timelineItemIds, trackItemsMap: timelineItems, transitionsMap, fps }),
+    [fps, timelineItemIds, timelineItems, transitionsMap],
   );
 
   const openMediaLibrary = useCallback(() => {
@@ -393,10 +469,10 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
       if (renderMeta?.ffmpegFallbackReason) return `${stage} · Remotion fallback`;
       return engineLabel ? `${stage} · ${engineLabel}` : stage;
     }
-    if (!hasRenderableVisualClip) return 'Add a visual clip';
-    return 'Ready · Space plays preview';
+    if (renderPreflight.kind === 'blocked') return renderPreflight.label;
+    return `${renderPreflight.label} · Space plays preview`;
   })();
-  const renderStatusTitle = renderMeta?.ffmpegFallbackReason || renderStatusText;
+  const renderStatusTitle = renderMeta?.ffmpegFallbackReason || renderPreflight.detail || renderStatusText;
 
   // Neutralize the App-level <main>'s p-8 with -m-8 so this view can claim the
   // full viewport below the header. h-[calc(100vh-3.5rem)] = 100vh minus the
@@ -424,8 +500,10 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         <div className="flex items-center gap-3 flex-none">
           <span
             className={`hidden lg:inline-flex max-w-[260px] truncate rounded-md border px-2 py-1 text-[11px] ${
-              !hasRenderableVisualClip && phase.kind !== 'rendering'
+              renderPreflight.kind === 'blocked' && phase.kind !== 'rendering'
                 ? 'border-amber-400/20 bg-amber-950/30 text-amber-200'
+                : renderPreflight.kind === 'remotion' && phase.kind !== 'rendering'
+                  ? 'border-amber-400/15 bg-amber-950/20 text-amber-100'
                 : 'border-white/[0.08] bg-white/[0.04] text-zinc-400'
             }`}
             title={renderStatusTitle}
