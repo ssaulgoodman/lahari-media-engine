@@ -497,3 +497,7 @@ repeatable human/agent product surface.
 - 2026-06-18 · P3c backend/MCP slice landed locally · — · Added `get_shot_context` as the
   summary-first shot working set for agents and HTTP callers. Studio's visible "Shot state /
   Recipe & payload" panel remains the next P3c product slice.
+- 2026-06-20 · first four post-smoke control slices landed locally · 2e4ee6b, f942ac1,
+  8de2dc1, 4323d3f · Studio now has per-shot workflow mode controls, shot-row realtime refresh
+  for agent/MCP generations, summary-first video dry-runs, and guarded Space play/pause plus
+  clearer render readiness/status in the render timeline.
