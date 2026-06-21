@@ -32,37 +32,48 @@ Two roots:
 
 ## Native Worker Contract
 
-Use Codex/Claude native workers only when they protect the main director context or create real parallelism: precise imagegen repair, visual triage across many boards/clips, prompt-payload contradiction checks, continuity audits, source-material cleanup, or editor handoff packaging. Do not spawn a worker for a normal single action, an ambiguous creative decision, or anything that needs direct artist approval before proceeding.
+Use Codex/Claude native subagents or background workers only when a bounded off-thread pass protects the main director context. Mirage does not create, name, persist, or coordinate these workers. They are harness-local helpers; they may keep running while the current session is alive, but they are not reusable Mirage actors and they are not project state. If a worker produces a useful local file, that file becomes Mirage state only after the main director uploads/imports/applies it through Mirage.
 
-The director sends a bounded packet:
+Name the worker role in the packet title and receipt, even if the harness UI assigns its own nickname. Stable role names:
 
-```md
-Native worker packet
-- Target: project/scene/shot/asset IDs and names
-- Task: one concrete question or repair
-- Inputs: exact files, image URLs/paths, `describe_prompt` snippets, or payload summaries to inspect
-- Preserve: identity, style, geography, lock state, timing, text that must not change
-- Allowed tools: e.g. imagegen, local visual inspection, local file packaging
-- Forbidden: paid Mirage jobs, Supabase writes, lock/unlock, project text edits, secret/token handling
-- Return: the receipt fields below
+| Role name | Use when | Must not do |
+|---|---|---|
+| `Image Repair Worker` | Precise native imagegen/storyboard/keyframe repair from an existing board/frame | No Mirage paid jobs, uploads, imports, locks, or Supabase writes |
+| `Storyboard Payload Auditor` | Storyboard render prompt/ref/context audit before a board spend | No generation, prompt edits, or lock/unlock |
+| `Video Payload Auditor` | Video prompt segment/ref/audio/model contradiction check before a video spend | No `start_job`, provider retries, or persisted slot edits |
+| `Continuity Auditor` | Cross-shot start/end-state, geography, screen-direction, or identity continuity review | No project edits; return suggested action text only |
+| `Candidate Triage Worker` | Compare generated candidates or rerolls and shortlist which deserve artist review | No locking; main director locks after approval |
+| `Export Packaging Worker` | Collect local/debug artifacts, shot URLs, receipts, or editor handoff materials | No canonical state assumptions; cite live source or synced timestamp |
+
+Packet template:
+
+```text
+Worker role: <stable role name>
+Target: <project / scene / shot / asset ids and labels>
+Task: <one question or one repair>
+Inputs: <exact payload summary, media paths/urls, refs, constraints>
+Preserve: <identity, style, geography, text, timing, etc.>
+Allowed tools: <imagegen, local inspection, filesystem read, etc.>
+Forbidden: <paid Mirage jobs, uploads/imports, locks, DB writes, broad edits>
+Return: <receipt fields required>
 ```
 
-The worker returns a compact receipt:
+Receipt template:
 
-```md
-Native worker receipt
-- Target:
-- Inputs read:
-- Tools used:
-- Output path or asset candidate:
-- Prompt/checks performed:
-- Changes made or findings:
-- Suggested Mirage action:
-- Caveats/risks:
-- Ready to apply: yes/no
+```text
+Worker role:
+Target:
+Inputs read:
+Tools used:
+Output path or asset candidate:
+Prompt/checks performed:
+Findings or changes:
+Suggested Mirage action:
+Caveats:
+Ready to apply: yes/no
 ```
 
-The director then decides what to do. If bytes were produced, upload/import through the normal Mirage path (`/api/agent/uploads`, `import_storyboard_image`, `import_keyframe_image`, or the relevant typed action). If the receipt is an audit, translate it into a dry-run, `contextOverrides`, `apply_text_edits`, `apply_shot_prompts`, or another explicit action. Never treat a worker receipt as canonical project state by itself.
+The main director remains responsible for live Mirage reads, artist approval, paid `start_job` calls, uploads/imports, locks, and all persisted edits. Treat a worker receipt as advice or an artifact candidate, never as canonical state.
 
 ## Verification rules
 

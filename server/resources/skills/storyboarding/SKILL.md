@@ -70,7 +70,7 @@ Before locking, check whether the board actually stages the shot:
 
 ## Native Image Workers
 
-Use a Codex/Claude native subagent or background worker when a board/keyframe needs precise imagegen repair and the iteration would bloat the main director context. The worker is a harness-native helper, not a Mirage actor.
+Use a Codex/Claude native subagent or background worker named `Image Repair Worker` when a board/keyframe needs precise imagegen repair and the iteration would bloat the main director context. The worker is a harness-native helper, not a Mirage actor.
 
 Use the native-worker packet/receipt contract from `docs/agent-working-method.md`. For storyboard work, the packet should include the target shot, current board/keyframe image, exact repair, preserve constraints, allowed tool (`imagegen` or local inspection), and the intended import path. The worker should not call paid Mirage jobs, lock/unlock, edit project text, or write Supabase state.
 
