@@ -443,7 +443,9 @@ right-side media library, and playhead hit-target polish are implemented. Follow
 storyboard-mode poster fallbacks, old timeline poster backfill, drawer-added poster metadata,
 metadata-only video preload, and poster refresh when a board/keyframe changes without a new video
 URL. This makes the timeline materially more usable for the pre-Lahari smoke; remaining P6 work
-is richer editing power rather than baseline legibility.
+is richer editing power rather than baseline legibility. Legacy canonical timelines that already
+saved 5s placeholder clip durations can be dry-run/repaired with
+`scripts/repair-timeline-durations.mjs`.
 
 Agent actions should follow these UI/data primitives, not precede them.
 
@@ -591,6 +593,10 @@ repeatable human/agent product surface.
   thumbnails/posters, markers, shortcut help, duplicate, Escape-to-close drawer, docked media
   library, safer playhead hit targets, and completed thumbnail behavior for storyboard-mode,
   drawer-added, old saved, and poster-refreshed clips. Cross-review passed; build + tsc green.
+- 2026-06-21 · timeline duration repair helper landed locally · — · Added
+  `scripts/repair-timeline-durations.mjs`, a dry-run-first operator script for canonical render
+  timelines that were saved with placeholder 5000ms video clip durations. `--apply` writes a new
+  timeline version after probing actual media durations with `ffprobe`.
 
 ## Render Timeline — Editor Capability Audit (2026-06-20)
 
