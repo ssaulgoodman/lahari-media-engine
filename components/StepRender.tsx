@@ -250,7 +250,10 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           shotId: s.id,
           durationMs: Math.max(1000, Math.round(Number(s.duration || 5) * 1000)),
           muted: project.workflowKey === 'music_led' || !!project.audioPath,
-          posterUrl: s.imageUrl,
+          // Storyboard-mode shots often have no imageUrl — fall back to the
+          // board, then the extracted last frame, so thumbnails populate in the
+          // now-dominant storyboard flow too.
+          posterUrl: s.imageUrl || s.storyboardUrl || s.extractedLastFrameUrl,
         })),
     // Only re-seed if the set of video URLs actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps

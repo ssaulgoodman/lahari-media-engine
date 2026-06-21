@@ -481,8 +481,9 @@ const VersionCard: React.FC<{
   const handleAdd = () => {
     // Cloning intent: the canonical shot stays untouched; we just append a
     // copy of this version's video URL to the timeline. The artist can then
-    // trim, split, or move it independently.
-    addVideoClip(version.url, label);
+    // trim, split, or move it independently. Carry a poster so the new clip
+    // gets a timeline thumbnail instead of a plain block.
+    addVideoClip(version.url, label, version.thumbnailUrl || posterFallback);
     onAdded?.(version.url, label);
   };
 
@@ -593,7 +594,7 @@ const VersionCard: React.FC<{
             className="w-full h-full object-cover"
             muted
             playsInline
-            preload="auto"
+            preload="metadata"
           />
         )}
       </button>

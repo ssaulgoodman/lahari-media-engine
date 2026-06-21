@@ -172,7 +172,7 @@ const snapshotFromTimelineState = (s: ReturnType<typeof useStore.getState>): Sna
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
 // creates one when the timeline is empty). Used by the manual-upload button
 // and the MediaLibraryDrawer (any external surface adding a clip).
-export const addVideoClip = (src: string, name?: string) => {
+export const addVideoClip = (src: string, name?: string, posterUrl?: string) => {
   const id = generateId();
   const from = nextStartMs();
   const existingTrack = useStore.getState().tracks.find((t) => t.type === 'video');
@@ -182,7 +182,7 @@ export const addVideoClip = (src: string, name?: string) => {
       display: { from },
       type: 'video',
       details: { src, volume: 100, ...(name ? { name } : {}) },
-      metadata: { resourceId: id, ...(name ? { displayName: name } : {}) },
+      metadata: { resourceId: id, ...(name ? { displayName: name } : {}), ...(posterUrl ? { posterUrl } : {}) },
     },
     options: existingTrack
       ? { targetTrackId: existingTrack.id, isNewTrack: false }
@@ -275,6 +275,8 @@ const reconcileSnapshotWithInitialClips = async <T extends {
         existing.details?.src !== clip.src
         || existing.details?.name !== clip.name
         || existing.details?.muted !== clip.muted
+        // Backfill poster metadata onto clips saved before thumbnails existed.
+        || (!!clip.posterUrl && (existing.metadata as any)?.posterUrl !== clip.posterUrl)
         || isFiveSecondPlaceholder(existing)
       ) {
         const nextDur = isFiveSecondPlaceholder(existing)
