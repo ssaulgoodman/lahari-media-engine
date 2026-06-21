@@ -24,8 +24,11 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
   production surface for every move.
 - The agent slowed down on broad reads (`open_project`) and repeated full dry-run prompt bodies.
   Next reads should be shot-scoped and summary-first, with exact payloads available on demand.
-- The render timeline works, but it is still basic. It needs clearer clip/audio controls,
-  canonical-vs-local state, render eligibility, and storage/preview policy.
+- The render timeline has moved from basic preview toward a usable editing surface:
+  server-backed local-vs-canonical saves, render preflight, media drawer, thumbnails, waveforms,
+  markers, frame-accurate transport, duplicate, shortcut help, and a safer draggable playhead are
+  landed locally. Remaining frontier: snapping/toggles, richer track controls, export/Premiere
+  bridge, and storage/preview policy.
 - The HF sketch-board technique is now the canonical storyboard planning path: black-and-white
   GPT Image 2 sketch boards by default, with final-style/rendered boards available only as a
   deliberate override.
@@ -434,6 +437,14 @@ the first reason such as transitions, visual effects, playback-rate changes, mis
 source, or overlapping visual clips. This is UI preflight only; the renderer remains
 authoritative after staging.
 
+**Timeline editor upgrade landed locally:** frame-accurate transport, audio waveforms, video
+thumbnails/posters, markers, shortcut cheat sheet, duplicate, Escape-to-close drawer, docked
+right-side media library, and playhead hit-target polish are implemented. Follow-up review fixed
+storyboard-mode poster fallbacks, old timeline poster backfill, drawer-added poster metadata,
+metadata-only video preload, and poster refresh when a board/keyframe changes without a new video
+URL. This makes the timeline materially more usable for the pre-Lahari smoke; remaining P6 work
+is richer editing power rather than baseline legibility.
+
 Agent actions should follow these UI/data primitives, not precede them.
 
 ### P6b — Premiere Pro Bridge `[future, but important]`
@@ -574,6 +585,12 @@ repeatable human/agent product surface.
   now labels slots and images with the same first-class vocabulary: `default`, `saved override`,
   `one-off`, or `excluded`. The raw source/edit path remains available, but humans no longer have
   to infer the meaning of a payload chip from internal source strings.
+- 2026-06-21 · render timeline editor lane landed locally · `464ef25`, `e84988c`, `100dbed`,
+  `9e4b6fc`, `18b561b`, `50f110c`, `9b2698c`, `d0d3a9f`, `1b2a0b9`, `15022a0`, `7e7fad7`,
+  `7f4467c` · Timeline now has frame-accurate keyboard transport, audio waveforms, video
+  thumbnails/posters, markers, shortcut help, duplicate, Escape-to-close drawer, docked media
+  library, safer playhead hit targets, and completed thumbnail behavior for storyboard-mode,
+  drawer-added, old saved, and poster-refreshed clips. Cross-review passed; build + tsc green.
 
 ## Render Timeline — Editor Capability Audit (2026-06-20)
 
