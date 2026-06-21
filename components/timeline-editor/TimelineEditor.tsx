@@ -697,12 +697,13 @@ const TimelineEditor: React.FC<Props> = ({
   // (double-mount) would leak dispatches from sm1's IIFE into sm2's state and
   // throw "Target track not found" because sm2 doesn't know sm1's track IDs.
   //
-  // Re-seed trigger: URL signature change (regen, project switch). seededKeyRef
-  // prevents a stable prop reference from re-triggering on every render.
+  // Re-seed trigger: URL/poster signature change (regen, storyboard/keyframe
+  // fix, project switch). seededKeyRef prevents a stable prop reference from
+  // re-triggering on every render.
   const seededKeyRef = useRef<string>('');
   useEffect(() => {
     if (!stateManager) return;
-    const videoKey = (initialClips ?? []).map((c) => c.src).join('|');
+    const videoKey = (initialClips ?? []).map((c) => `${c.src}~${c.posterUrl || ''}`).join('|');
     const audioKey = (initialAudioClips ?? []).map((c) => c.src).join('|');
     // resetToken is folded into the key so bumping it in the parent forces a
     // re-seed even when the clip URLs are identical.

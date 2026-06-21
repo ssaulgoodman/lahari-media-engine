@@ -255,9 +255,16 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           // now-dominant storyboard flow too.
           posterUrl: s.imageUrl || s.storyboardUrl || s.extractedLastFrameUrl,
         })),
-    // Only re-seed if the set of video URLs actually changes.
+    // Re-seed when the video set changes, or when the representative poster
+    // changes for an existing clip. The latter lets storyboard/keyframe fixes
+    // repaint timeline thumbnails without requiring a page reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [project.workflowKey, project.audioPath, project.scenes.flatMap((s) => s.shots).map((s) => s.videoUrl).join('|')],
+    [project.workflowKey, project.audioPath, project.scenes.flatMap((s) => s.shots).map((s) => [
+      s.videoUrl,
+      s.imageUrl,
+      s.storyboardUrl,
+      s.extractedLastFrameUrl,
+    ].join('~')).join('|')],
   );
 
   // Song audio lives on the editor's audio track. The renderer used to inject

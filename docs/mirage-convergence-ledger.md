@@ -17,6 +17,12 @@ now that the shape is found.
 
 **Fast read (2026-06-16):**
 - Prize: one Mirage codebase; Lahari becomes tenant #1 through workspace/preset-pack primitives.
+- Data call (2026-06-21): Lahari already has its own paid Supabase project. Do **not** copy
+  its live content into the current Mirage/Sacred database by default. First convergence target
+  is one codebase + tenant/workspace routing while Lahari data remains in Lahari's DB; any
+  later consolidation is an explicit migration project with rehearsal and rollback.
+- Naming note (2026-06-21): product/brand direction is moving from "Mirage" toward **Sacred**.
+  Do not do broad code/package/env renames until Saul calls a dedicated rename sweep.
 - Already landed from the audit: paid-generation guards, shot topology, render cancel/salvage, artist memory/assets, server-backed timelines, sidebar, media-library uploads.
 - Music-video smoke passed; smoke-derived Studio/product work now lives in `docs/mirage-post-smoke-product-ledger.md`.
 - Ready next without workspace forks: CP/Yapper/persona acceptance and small reliability/UX hardening.
@@ -75,6 +81,10 @@ _(Things we've effectively agreed. Promote forks here as they're called.)_
   repos; lahari becomes a tenant. (The reason this whole ledger exists.)
 - **L2 — Tenancy is the generalization, not a lahari hack.** Workspace + preset-pack is a
   general primitive; lahari is tenant #1, validating the primitives any future studio reuses.
+- **L3 — Lahari data stays in the paid Lahari DB by default.** "Tenant convergence" means one
+  product/codebase and a Lahari workspace/preset-pack surface, not an automatic bulk copy of
+  live Lahari content into the current Mirage/Sacred database. Copy/consolidate only after a
+  separate rehearsed migration with rollback.
 
 ## Non-goals / guardrails
 
@@ -82,20 +92,24 @@ _(Things we've effectively agreed. Promote forks here as they're called.)_
   it a workspace/preset capability; if it is Lahari-only, gate it to the Lahari workspace.
 - Do not reintroduce Lahari, Bhakti, devotional, queue, or song assumptions into generic Mirage
   prompts, skills, actions, or UI copy.
-- Do not migrate live Lahari data until there is a rehearsal plan with ownership mapping,
-  storage mapping, billing/spend handling, deep-link behavior, rollback, and a dry run.
+- Do not migrate or copy live Lahari data into the current Mirage/Sacred database by default.
+  Lahari's paid Supabase project remains its source of truth for the first tenant convergence
+  shape. Any later data consolidation needs ownership mapping, storage mapping, billing/spend
+  handling, deep-link behavior, rollback, and a dry run.
 - Do not assume workspace-scoped installed skills exist yet. Until the plugin/runtime supports
   dynamic skill distribution cleanly, preset packs mean server-owned recipes, defaults, assets,
   style notes, prompt overrides, and operator guidance.
 
 ## Open forks (need Saul's call before deep planning)
 
-- **F1 — Tenancy key + schema unification.** Target architecture: one codebase wants one data
-  model keyed by `workspace_id`, not two `DB_TABLE_PREFIX` schemas (`studio_*` vs `lahari_*`)
-  behind one binary. This is not a "yes, implement directly on live data" switch. The first
-  deliverable is a migration design/prototype: auth ownership, storage paths, queue/songs,
-  billing/spend, project IDs, deep links, rollback, dry run, and cutover.
-  *Recommendation: yes to the target; design the migration before moving live Lahari rows.*
+- **F1 — Tenancy key + data-home strategy.** Target architecture is one codebase/product
+  surface with workspace/preset-pack tenancy. Lahari's first data home remains the existing
+  paid Lahari Supabase project, not the current Mirage/Sacred DB. The first deliverable is a
+  design/prototype for routing a Lahari workspace to Lahari-owned data while keeping generic
+  projects on the studio data home: auth ownership, storage paths, queue/songs, billing/spend,
+  project IDs, deep links, rollback, dry run, and cutover.
+  *Recommendation: converge code/product first; treat physical DB consolidation as a later
+  explicit migration, not the default tenant-onboarding path.*
 - **F2 — Server-canonical timeline.** Mirage's timeline lives in browser localStorage
   (`components/timeline-editor/persistence.ts`), so an agent literally cannot see or edit it —
   a hole in the agent-native story. Adopt the server-canonical timeline (storage + history +
@@ -213,8 +227,11 @@ knowledge should live in recipes, prompt overrides, style notes, reference asset
 workspace defaults — not in globally installed skills.
 
 ### C5 — Deploy / domain cutover `[needs C2, C4; gated by F5]`
-One deploy, migrate lahari auth/projects, cut over the domain for live artists. The
-irreversible, people-touching piece — its own plan, done last and carefully.
+One product/codebase, cut Lahari artists over carefully. The first target is not "copy all
+Lahari content into the Mirage/Sacred DB"; it is "Lahari artists use the converged app against
+the Lahari data home with Lahari workspace/preset capabilities." Any future physical DB
+consolidation becomes its own separate migration. This is the irreversible, people-touching
+piece — its own plan, done last and carefully.
 
 ### C6 — Render UX polish pass `[after C1, C3]`
 The editor is feature-rich already (~3,400 lines across Timeline/Ruler/Playhead/Effects/
@@ -328,6 +345,11 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   so this ledger stays focused on Lahari/workspace/tenant convergence. The same smoke surfaced a
   render storage-size cap on the free Mirage Supabase project; long final renders need
   higher-cap storage or an explicit preview-compression policy.
+- 2026-06-21 · data-home call · — · Saul clarified Lahari already has its own paid Supabase
+  project; convergence should not copy Lahari live content into the current Mirage/Sacred DB by
+  default. Updated L3/F1/C5: one codebase/product first, Lahari data home retained first,
+  physical DB consolidation only as a later explicit migration. Also captured the brand note:
+  product direction is moving from Mirage toward Sacred, but broad rename is deferred.
 
 ## References
 
