@@ -66,8 +66,7 @@ codex plugin add mirage@mirage
 codex mcp remove mirage
 codex mcp add mirage --url ${endpoint}
 codex mcp login mirage
-codex mcp get mirage --json
-Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
+codex mcp get mirage --json`;
 
 const codexPluginTokenInstallCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
 mirage login --token '${token}'

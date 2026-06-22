@@ -79,7 +79,7 @@ const KeyChecklist: React.FC<{
         <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Before you connect</p>
         <h2 className="text-xl font-display text-white tracking-tight">API keys required</h2>
         <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">
-          Mirage uses your own API keys. Complete at least one workflow lane to unlock token minting.
+          Mirage uses your own API keys. Complete at least one workflow lane before connecting.
         </p>
       </div>
 
@@ -328,7 +328,7 @@ export const ConnectPage: React.FC<{
   const token = created?.token;
   const tokenPlaceholder = token || '<token>';
   const mcpEndpoint = mcpUrl();
-  const mirageCliPackage = '@ssaulgoodman420/mirage-cli@0.1.12';
+  const mirageCliPackage = '@ssaulgoodman420/mirage-cli@0.1.13';
   const tokenMaskedSuffix = token ? token.slice(-6) : '';
   const canMintToken = anyLaneReady;
   const codexPluginOAuthInstall = `npm install -g ${mirageCliPackage}
@@ -344,8 +344,7 @@ codex plugin add mirage@mirage
 codex mcp remove mirage
 codex mcp add mirage --url ${mcpEndpoint}
 codex mcp login mirage
-codex mcp get mirage --json
-Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
+codex mcp get mirage --json`;
 
   const codexPluginMacInstall = `npm install -g ${mirageCliPackage}
 mirage login --token '${tokenPlaceholder}'
@@ -653,36 +652,54 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
               copyLabel="Copy commands"
             />
             <p className="text-[11px] text-zinc-400 leading-relaxed mt-3">
-              When <span className="font-mono text-zinc-300">codex mcp login mirage</span> opens the browser, approve the request here. Then fully restart Codex and ask: <span className="font-mono text-zinc-300">Check Mirage status and open my latest project.</span>
+              Run this in {codexPlatform === 'win' ? 'PowerShell' : 'Terminal'}. When <span className="font-mono text-zinc-300">codex mcp login mirage</span> opens the browser, approve the request here. Then fully quit and reopen Codex.
+            </p>
+            <div className="surface-inset rounded-md px-4 py-3 mt-4">
+              <p className="text-[11px] text-zinc-400 mb-1.5">First message in a new chat</p>
+              <p className="text-sm text-white font-mono">Check Mirage status and open my latest project.</p>
+            </div>
+            <p className="text-[11px] text-zinc-500 leading-relaxed mt-3">
+              OAuth is the normal path. No <span className="font-mono text-zinc-400">MIRAGE_MCP_TOKEN</span>, no <span className="font-mono text-zinc-400">launchctl</span>, and no pasted bearer token is needed for Codex MCP.
             </p>
           </div>
         )}
 
-        {/* Step 1 — Mint a token */}
+        {/* Bearer fallback */}
         {!oauthApprovalId && (
-        <div className={`surface rounded-xl p-7 mb-5 ${!canMintToken ? 'opacity-50 pointer-events-none' : ''}`}>
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <details className={`surface rounded-xl p-6 mb-5 group ${!canMintToken ? 'opacity-50 pointer-events-none' : ''}`}>
+          <summary className="cursor-pointer flex items-center justify-between gap-3 select-none">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Fallback</p>
-              <h2 className="text-xl font-display text-white tracking-tight">Mint a bearer token</h2>
-              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Use this for older clients or Claude Code if OAuth login is unavailable. Shown once; treat it like a password.</p>
-              {!canMintToken && (
-                <p className="text-xs text-amber-300/70 mt-2">Complete at least one workflow lane above to unlock token minting.</p>
-              )}
+              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-1">Fallback</p>
+              <h3 className="text-base font-display text-white tracking-tight">Bearer token setup for older clients</h3>
+              <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+                Use only if OAuth login is unavailable, or for Claude Code while direct OAuth support is pending.
+              </p>
             </div>
-            <button
-              onClick={createToken}
-              disabled={loading || !canMintToken}
-              className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 transition-colors flex-shrink-0"
-            >
-              {loading ? (
-                <span className="inline-flex items-center gap-2">
-                  <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />
-                  Working
-                </span>
-              ) : token ? 'Mint another' : 'Mint 30-day token'}
-            </button>
-          </div>
+            <span className="text-zinc-400 transition-transform group-open:rotate-180">▾</span>
+          </summary>
+
+          <div className="mt-5 space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-display text-white tracking-tight">Mint a bearer token</h2>
+                <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Shown once. Treat it like a password.</p>
+                {!canMintToken && (
+                  <p className="text-xs text-amber-300/70 mt-2">Complete at least one workflow lane above to unlock token minting.</p>
+                )}
+              </div>
+              <button
+                onClick={createToken}
+                disabled={loading || !canMintToken}
+                className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 transition-colors flex-shrink-0"
+              >
+                {loading ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />
+                    Working
+                  </span>
+                ) : token ? 'Mint another' : 'Mint 30-day token'}
+              </button>
+            </div>
 
           {token && (
             <div className="mt-6 space-y-3">
@@ -735,17 +752,13 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
               )}
             </div>
           )}
-        </div>
-        )}
-
-        {/* Step 2 — Install */}
-        {!oauthApprovalId && token && (
-          <div className="surface rounded-xl p-7 mb-5">
-            <div className="mb-6">
-              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Step 2</p>
-              <h2 className="text-xl font-display text-white tracking-tight">Install in your harness</h2>
-              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Pick the harness you use. Codex gets the Mirage plugin; Claude Code uses the direct MCP connection for now.</p>
-            </div>
+          {token && (
+            <div className="surface-inset rounded-xl p-5">
+              <div className="mb-6">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Token install</p>
+                <h2 className="text-xl font-display text-white tracking-tight">Install in your harness</h2>
+                <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Pick the harness only for the bearer fallback path.</p>
+              </div>
 
             {/* Harness tabs */}
             <div className="flex gap-6 border-b border-white/[0.06] mb-6">
@@ -790,11 +803,14 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
             ) : (
               claudeContent
             )}
+            </div>
+          )}
           </div>
+        </details>
         )}
 
-        {/* Step 3 — Verify */}
-        {!oauthApprovalId && token && (
+        {/* Verify */}
+        {!oauthApprovalId && (
           <div className="rounded-xl p-7 mb-5 relative overflow-hidden" style={{
             background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.04), rgba(255, 255, 255, 0.02))',
             boxShadow: 'inset 0 0 0 1px rgba(16, 185, 129, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.02)'
@@ -804,14 +820,14 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-300"><polyline points="20 6 9 17 4 12"/></svg>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-300/80 mb-1.5">Step 3 — Verify</p>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-300/80 mb-1.5">Verify</p>
                 <h2 className="text-lg font-display text-white tracking-tight mb-3">You're connected when this works</h2>
                 <p className="text-sm text-zinc-300 leading-relaxed mb-3">In a fresh harness chat, ask:</p>
                 <div className="surface-inset rounded-md px-4 py-3 mb-3">
                   <p className="text-sm text-white font-mono">Check Mirage status and open my latest project.</p>
                 </div>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  The agent should run <span className="font-mono text-zinc-300">mirage_doctor</span>, initialize the folder if needed, open or create a project, and sync project files. Project sync should not ask for elevated access to skills or action schemas.
+                  The agent should run <span className="font-mono text-zinc-300">mirage_doctor</span>, open or create a project, and use live MCP as the source of truth. Local sync is optional and should not ask for elevated access to skills or action schemas.
                 </p>
               </div>
             </div>
@@ -819,7 +835,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
         )}
 
         {/* Troubleshooting */}
-        {!oauthApprovalId && token && (
+        {!oauthApprovalId && (
           <details className="surface rounded-xl p-6 mb-5 group">
             <summary className="cursor-pointer flex items-center justify-between gap-3 select-none">
               <div>
@@ -835,15 +851,15 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
                   <li>Fully <span className="text-zinc-300">quit</span> the harness — closing the window isn't enough.</li>
                   <li>Open a new chat (existing chats may not pick up newly-registered MCP servers).</li>
                   <li>For Codex, run <span className="font-mono text-zinc-300">codex mcp get mirage --json</span> and <span className="font-mono text-zinc-300">codex plugin add mirage@mirage</span> again if needed.</li>
-                  <li>If the server is listed but tools fail, your token may be expired. Mint a new one.</li>
+                  <li>If the server is listed but auth fails, run <span className="font-mono text-zinc-300">codex mcp login mirage</span> again and approve the browser request.</li>
                 </ul>
               </div>
               <div>
                 <p className="text-zinc-200 font-medium mb-1.5">Authorization errors</p>
                 <ul className="text-xs text-zinc-400 leading-relaxed space-y-1 ml-4 list-disc">
-                  <li>Confirm you copied the token completely. The full token is ~50 characters.</li>
-                  <li>Check the token is still active in the list below.</li>
-                  <li>For Claude Code, make sure the env var is set <span className="text-zinc-300">before</span> launching <span className="font-mono text-zinc-300">claude</span>.</li>
+                  <li>OAuth path: rerun <span className="font-mono text-zinc-300">codex mcp login mirage</span>, approve it here, then restart the harness.</li>
+                  <li>Bearer fallback path: confirm you copied the full token and that it is still active in the token list below.</li>
+                  <li>Claude Code fallback: make sure the env var is set <span className="text-zinc-300">before</span> launching <span className="font-mono text-zinc-300">claude</span>.</li>
                 </ul>
               </div>
               <div>
