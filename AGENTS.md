@@ -70,7 +70,8 @@ Useful checks in this repo: `npm run build`, `npx tsc --noEmit`, `git diff --che
 - `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY` - GPT-5.5 text-provider option and optional GPT script-writer experiment. Not used for active image/video generation.
 - `SCRIPT_WRITER_PROVIDER=openai` (optional) - forces `generate-script` to GPT-5.5 globally. Script writing is otherwise Claude Opus and is intentionally not routed through the text-provider picker.
-- `SEGMIND_API_KEY` - all active image/video generation: Nano Banana 2 images/storyboards/looks/frames and Seedance/Veo video.
+- `SEGMIND_API_KEY` - default active image/video generation: Nano Banana 2 images/storyboards/looks/frames and Segmind Seedance/Veo video.
+- `OPENROUTER_API_KEY` - optional OpenRouter video route for `seedance-2.0-fast-openrouter`.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` - Postgres + Storage + song catalog.
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
 - `CORS_ORIGINS` - comma-separated in prod.
@@ -215,7 +216,7 @@ Generate router modules:
 | Script writer | Claude Opus 4.7 direct; optional GPT via env/body experiment | `claude.ts`, `openai-script.ts` |
 | Image generation | Segmind Nano Banana 2 for style refs, character/env looks, start/end frames | `segmind-image.ts`, `image-provider.ts` |
 | Storyboard image | Segmind Nano Banana 2; legacy stored provider keys normalize to `nano-banana-2` | `storyboard.ts` |
-| Video | Segmind: Seedance 2.0 / Veo 3.1 variants | `segmind.ts`, `video-provider.ts` |
+| Video | Segmind: Seedance 2.0 / Veo 3.1 variants; optional OpenRouter Seedance 2.0 Fast | `segmind.ts`, `openrouter-video.ts`, `video-provider.ts` |
 
 ### Text Provider Routing
 
@@ -257,7 +258,7 @@ Continuity:
 
 ## Video Generation
 
-All active video generation goes through Segmind. There is no active Vertex fallback; Segmind credit, rate-limit, model, or safety failures should surface honestly for the artist/operator to fix.
+Active video generation goes through Segmind by default. `seedance-2.0-fast-openrouter` routes Seedance 2.0 Fast through OpenRouter when selected. There is no active Vertex fallback; provider credit, rate-limit, model, or safety failures should surface honestly for the artist/operator to fix.
 
 Seedance constraint: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control. Storyboard mode sends no `first_frame_url`; it sends locked storyboard as `@image1` plus style/cast/environment refs.
 

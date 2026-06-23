@@ -11,7 +11,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows, deleteRows, findShot, incrementColumn, getSB, T } from '../database.js';
 import { readAsBase64, mimeFromExt, saveBuffer, storageUrl } from '../storage.js';
-import { SEGMIND_MODELS } from '../services/segmind.js';
+import { getVideoModel } from '../../constants/videoModels.js';
 import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
@@ -671,8 +671,7 @@ router.post('/:id/shots/:shotId/use-as-prev-end', async (req, res) => {
 
   const project = await selectOne('projects', { id: projectId });
   const modelKey = project?.video_model || 'veo-3.1-fast';
-  const segModel = (SEGMIND_MODELS as any)[modelKey];
-  const supportsLastFrame = segModel?.supportsLastFrame || false;
+  const supportsLastFrame = getVideoModel(modelKey).supportsLastFrame || false;
   if (!supportsLastFrame) {
     return res.status(400).json({ error: `Current video model (${modelKey}) does not support end-keyframe conditioning. Switch to Veo 3.1 to use reverse-chain.` });
   }

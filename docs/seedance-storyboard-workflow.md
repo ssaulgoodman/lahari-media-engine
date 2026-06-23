@@ -175,7 +175,7 @@ The generated Seedance prompt says:
 
 Seedance is called with `startImagePath = undefined` in storyboard mode, so `reference_images` carries storyboard plus refs. This avoids the Segmind Seedance mutual-exclusion rule between `first_frame_url` and `reference_images`.
 
-Seedance storyboard mode also ignores the old keyframe continuity chain: Studio does not block on `prev_shot`, start-frame generation skips continuity gates for Seedance, and video generation skips chained prompt refresh when a locked storyboard is driving the clip.
+Seedance storyboard mode also ignores the old keyframe continuity chain: Studio does not block on `prev_shot`, start-frame generation skips continuity gates for Seedance, and video generation skips chained prompt refresh when a locked storyboard is driving the clip. Segmind is the default Seedance provider; `seedance-2.0-fast-openrouter` can route Seedance Fast through OpenRouter when selected.
 
 ## UI Handoff For Claude Code
 

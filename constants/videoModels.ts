@@ -1,11 +1,11 @@
-// Shared video model registry — must stay in sync with
-// server/services/segmind.ts (SEGMIND_MODELS).
-// All models now route through Segmind's unified API.
+// Shared video model registry. Provider-specific services own request details;
+// this registry owns artist-visible model capabilities.
 
 export interface VideoModelSpec {
   key: string;
   label: string;
-  provider: 'segmind';
+  provider: 'segmind' | 'openrouter';
+  family: 'seedance' | 'veo';
   /** Allowed shot durations (seconds). First entry is the default. */
   durations: number[];
   /** Rough cost estimate for display ($/sec). */
@@ -16,7 +16,7 @@ export interface VideoModelSpec {
   supportsLastFrame: boolean;
   /** Whether this model accepts reference images for consistency. */
   supportsRefs: boolean;
-  /** Whether refs work alongside start/end frames (Veo=true, Seedance=false due to mutual exclusivity). */
+  /** Whether refs work alongside start/end frames. */
   refsWithFrames: boolean;
   /** Resolutions accepted by this provider/model endpoint. */
   resolutions: Array<'720p' | '1080p'>;
@@ -35,6 +35,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     key: 'seedance-2.0-fast',
     label: 'Seedance 2.0 Fast',
     provider: 'segmind',
+    family: 'seedance',
     durations: [15, 4, 5, 6, 8, 10, 12],
     costPerSec: 0.146,
     note: 'Default. Storyboard clips up to 15s.',
@@ -44,9 +45,23 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     resolutions: ['720p'],
   },
   {
+    key: 'seedance-2.0-fast-openrouter',
+    label: 'Seedance 2.0 Fast (OpenRouter)',
+    provider: 'openrouter',
+    family: 'seedance',
+    durations: [15, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+    costPerSec: 0.146,
+    note: 'OpenRouter / ByteDance. Storyboard clips up to 15s.',
+    supportsLastFrame: true,
+    supportsRefs: true,
+    refsWithFrames: true,
+    resolutions: ['720p'],
+  },
+  {
     key: 'seedance-2.0',
     label: 'Seedance 2.0',
     provider: 'segmind',
+    family: 'seedance',
     durations: [15, 4, 5, 6, 8, 10, 12],
     costPerSec: 0.182,
     note: 'Higher quality, storyboard clips up to 15s.',
@@ -59,6 +74,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     key: 'veo-3.1-fast',
     label: 'Veo 3.1 Fast',
     provider: 'segmind',
+    family: 'veo',
     durations: [8],
     costPerSec: 0.10,
     supportsLastFrame: true,
@@ -70,6 +86,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     key: 'veo-3.1',
     label: 'Veo 3.1',
     provider: 'segmind',
+    family: 'veo',
     durations: [4, 6, 8],
     costPerSec: 0.20,
     supportsLastFrame: true,

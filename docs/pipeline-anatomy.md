@@ -433,7 +433,7 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 
 | | |
 |---|---|
-| **Model** | Veo 3.1 / Seedance 2.0 via Segmind (segmind.ts) |
+| **Model** | Veo 3.1 / Seedance 2.0 via Segmind, plus optional Seedance 2.0 Fast via OpenRouter (`video-provider.ts`) |
 | **Input** | Keyframe mode: start frame + motion prompt + ref images + end frame. Seedance storyboard mode: locked storyboard as `@image1` + exact style/cast/environment refs + saved cut plan text. |
 | **Output** | Video clip |
 | **Artist control** | "Video" tab: motion prompt/edit prompt in keyframe mode. In storyboard mode, the saved storyboard cut plan drives the prompt after storyboard lock. |

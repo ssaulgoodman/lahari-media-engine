@@ -888,7 +888,7 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
     name: 'Seedance video from locked storyboard',
     stage: 'studio',
     model: 'seedance-2.0-*',
-    modelLabel: 'Seedance 2.0 via Segmind',
+    modelLabel: 'Seedance 2.0',
     triggeredBy: "Fires when you click 'Generate video' in the Storyboard panel's Video sub-tab.",
     summary: 'Builds the Seedance prompt around @image1 as the locked ordered storyboard, @image2+ as locked consistency refs, and the saved cut plan as the motion/edit guide.',
     variables: [

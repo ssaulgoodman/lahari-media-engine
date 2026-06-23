@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows, findShot, incrementColumn } from '../database.js';
 import { readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
-import { SEGMIND_MODELS, SegmindModelKey } from './segmind.js';
+import { getVideoModel } from '../../constants/videoModels.js';
 import { generateVideoWithFallback } from './video-provider.js';
 import { extractAudioSegment, extractLastFrame } from './ffmpeg.js';
 import { refreshChainedShotPrompt } from './claude.js';
@@ -54,8 +54,8 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
   }
 
   const projectPreferences = await getProjectPreferencesState(project as any);
-  const videoModelKey = (opts.modelOverride?.videoModel || projectPreferences.preferences.videoModel || 'veo-3.1-fast') as SegmindModelKey;
-  const modelSpec = SEGMIND_MODELS[videoModelKey] || SEGMIND_MODELS['veo-3.1-fast'];
+  const videoModelKey = opts.modelOverride?.videoModel || projectPreferences.preferences.videoModel || 'seedance-2.0-fast';
+  const modelSpec = getVideoModel(videoModelKey);
   const forcedKeyframe = shot.workflow_mode === 'keyframe';
   const forcedStoryboard = shot.workflow_mode === 'storyboard';
   const useStoryboardMode = !forcedKeyframe && modelSpec.family === 'seedance' && !!shot.storyboard_locked && !!shot.storyboard_asset_id;
@@ -243,7 +243,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       aspectRatio: aspect,
       resolution,
       durationSec: shot.duration,
-      modelKey: videoModelKey in SEGMIND_MODELS ? videoModelKey : 'veo-3.1-fast',
+      modelKey: modelSpec.key,
     });
     const videoPath = result.videoPath;
     const costEstimate = modelSpec.costPerSec * result.durationSec;
